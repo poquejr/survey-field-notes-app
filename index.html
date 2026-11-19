@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#24302a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Field Notes">
+  <meta name="description" content="Offline field book, JSA, level notes, daily field report, setups, and photos.">
+  <title>Field Notes</title>
+  <link rel="manifest" href="./manifest.json">
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="./css/app.css">
+  <link rel="stylesheet" href="./js/vendor/leaflet/leaflet.css">
+</head>
+<body>
+  <header class="app-bar">
+    <button type="button" class="btn btn-ghost hidden" id="btnBack" title="Main menu">Menu</button>
+    <div class="wordmark" id="productName">Field Notes</div>
+    <div class="summary" id="headerSummary">New day</div>
+  </header>
+
+  <main>
+  <section id="view-menu" class="view">
+    <p class="menu-job" id="menuJobLine">New day</p>
+    <div class="menu-grid">
+      <button type="button" class="tile" id="tileField" data-view="field">Field Notes<span class="sub">Setups, points, photos, today’s log</span></button>
+      <button type="button" class="tile" id="tileLevel" data-view="level">Level Notes<span class="sub">Differential leveling, BS / HI / FS</span></button>
+      <button type="button" class="tile tile-safety" id="tileSafety">Safety Sheet<span class="sub">JSA and crew sign-in</span></button>
+      <button type="button" class="tile" id="tileDaily" data-view="daily">Daily Report<span class="sub">Hours, work report, expenses, sign-off</span></button>
+      <button type="button" class="tile" id="tileManhole" data-view="manhole">Manhole Dips<span class="sub">Rim, dips, pipe table, flow sketch</span></button>
+      <button type="button" class="tile tile-muted" id="tileScan" data-view="scan">Scanning Notes<span class="sub">Coming in V2</span></button>
+    </div>
+    <div class="menu-secondary">
+      <button type="button" class="btn" id="tileReports" data-view="reports">Reports &amp; package</button>
+      <button type="button" class="btn" id="btnSettings">Settings</button>
+      <button type="button" class="btn" id="btnNew">New day</button>
+    </div>
+    <p class="install-hint" id="installHint"></p>
+  </section>
+
+  <section id="view-field" class="view hidden">
+    <div class="card">
+      <div class="grid g2" id="headerDaily">
+        <label class="fld span-row"><span>Project title</span><input id="projectTitle" type="text" placeholder="Project title"></label>
+        <label class="fld"><span>Date</span><input id="date" type="date"></label>
+        <label class="fld"><span>Job no.</span><input id="jobNo" type="text" autocomplete="off" placeholder="Job number"></label>
+        <label class="fld"><span>Assigned points — start</span><input id="pointStart" type="text" inputmode="numeric" autocomplete="off" placeholder="e.g. 1000"></label>
+        <label class="fld"><span>Assigned points — end</span><input id="pointEnd" type="text" inputmode="numeric" autocomplete="off" placeholder="e.g. 1250"></label>
+        <div class="fld span-row" id="pointRangeBox">
+          <span>Actual range used</span>
+          <div id="pointRangeUsed" class="hint">None yet — computed from logged and imported points</div>
+          <div id="pointRangeWarn" class="warn-text hidden"></div>
+        </div>
+        <label class="fld span-row"><span>Weather</span>
+          <div style="display:flex;gap:6px;align-items:flex-start">
+            <input id="weather" type="text" placeholder="e.g. Sunny, 75°F — or fetch automatically" style="flex:1">
+            <button type="button" class="btn" id="btnWeather" title="Fetch weather for the current GPS location">Get weather</button>
+          </div>
+          <span class="hint" id="weatherMeta"></span>
+        </label>
+      </div>
+      <div class="card flat" id="crsBox" style="margin:12px 0 0;border-style:dashed">
+        <h2>Coordinate system <span class="badge incomplete" id="crsStatus">Required</span></h2>
+        <p class="hint">Required on the job. Shown on reports, the package manifest, and Google Earth. The epoch is never filled in silently — confirm it before export.</p>
+        <div class="grid g2" id="crsFields">
+          <label class="fld span-row"><span>Projection / zone</span>
+            <select id="crsZone"><option value="">Select zone or projection…</option></select>
+          </label>
+          <label class="fld"><span>Horizontal datum + realization</span>
+            <input id="crsDatum" type="text" list="datumList" placeholder="e.g. NAD83(2011)">
+            <datalist id="datumList">
+              <option value="NAD83(2011)">
+              <option value="NAD83(1992)">
+              <option value="NAD83(NSRS2007)">
+              <option value="NAD83(CSRS)">
+              <option value="NAD83(2011) epoch as noted">
+              <option value="WGS84">
+              <option value="ITRF2014">
+              <option value="NATRF2022">
+            </datalist>
+          </label>
+          <label class="fld"><span>Epoch</span>
+            <input id="crsEpoch" type="text" inputmode="decimal" placeholder="e.g. 2010.00 — enter and confirm">
+          </label>
+          <label class="fld span-row" style="flex-direction:row;align-items:center;gap:8px;margin-top:4px">
+            <input id="crsEpochConfirmed" type="checkbox">
+            <span style="text-transform:none;letter-spacing:0;font-size:13px;font-weight:600;color:var(--ink)">I confirm this epoch</span>
+          </label>
+          <label class="fld"><span>Grid units</span>
+            <select id="crsUnits">
+              <option value="">Select units…</option>
+              <option value="us-ft">US survey feet</option>
+              <option value="intl-ft">International feet</option>
+              <option value="m">Metres</option>
+            </select>
+          </label>
+          <label class="fld"><span>Vertical datum</span>
+            <input id="crsVertical" type="text" list="vertList" placeholder="e.g. NAVD88">
+            <datalist id="vertList">
+              <option value="NAVD88">
+              <option value="NGVD29">
+              <option value="CGVD2013">
+              <option value="Ellipsoid (GRS80)">
+            </datalist>
+          </label>
+          <label class="fld"><span>Geoid model</span>
+            <input id="crsGeoid" type="text" list="geoidList" placeholder="e.g. GEOID18">
+            <datalist id="geoidList">
+              <option value="GEOID18">
+              <option value="GEOID12B">
+              <option value="GEOID09">
+              <option value="CGVD2013">
+            </datalist>
+          </label>
+          <label class="fld"><span>Project / combined scale factor (optional)</span>
+            <input id="crsScaleFactor" type="number" step="any" placeholder="Optional">
+          </label>
+        </div>
+        <p class="hint" id="crsFromJxl"></p>
+      </div>
+      <button type="button" class="header-toggle" id="headerToggle" aria-expanded="false" style="margin-top:12px">
+        <h2 style="margin:0">Crew, conditions, equipment</h2>
+        <span class="chev" id="headerChev">Show</span>
+      </button>
+      <div id="headerBody" class="hidden">
+        <h2>Job &amp; crew</h2>
+        <div class="grid g2">
+          <label class="fld span-row"><span>Job name (if different from project title)</span><input id="jobName" type="text" placeholder="Job name"></label>
+          <label class="fld"><span>Page</span><input id="page" type="text" inputmode="numeric" placeholder="Page"></label>
+          <label class="fld"><span>Party chief</span><input id="partyChief" type="text" placeholder="Party chief"></label>
+          <label class="fld"><span>Chainman</span><input id="chainman" type="text" placeholder="Chainman"></label>
+          <label class="fld"><span>Other crew</span><input id="crew" type="text" placeholder="Other crew"></label>
+          <label class="fld"><span>Start</span><input id="startTime" type="time"></label>
+          <label class="fld"><span>End</span><input id="endTime" type="time"></label>
+        </div>
+        <h2 style="margin-top:14px">Conditions</h2>
+        <div class="grid g2">
+          <label class="fld span-row"><span>Sky / extra condition notes</span><input id="weatherSky" type="text" placeholder="Additional sky or condition notes"></label>
+          <label class="fld"><span>Temp AM (°F)</span><input id="tempAm" type="number" step="any" placeholder="°F"></label>
+          <label class="fld"><span>Temp PM (°F)</span><input id="tempPm" type="number" step="any" placeholder="°F"></label>
+          <label class="fld"><span>Wind</span><input id="wind" type="text" placeholder="Wind"></label>
+          <label class="fld"><span>Pressure (inHg)</span><input id="pressure" type="number" step="any" placeholder="inHg"></label>
+          <label class="fld span-row"><span>Condition notes</span><input id="conditionsNotes" type="text" placeholder="Condition notes"></label>
+        </div>
+        <h2 style="margin-top:14px">Equipment</h2>
+        <div class="grid g2">
+          <label class="fld"><span>Instrument</span><input id="instMake" type="text" placeholder="Make / model"></label>
+          <label class="fld"><span>Instrument serial</span><input id="instSN" type="text" placeholder="Serial no."></label>
+          <label class="fld"><span>Data collector</span><input id="dcMake" type="text" placeholder="Make / model"></label>
+          <label class="fld"><span>Data collector serial</span><input id="dcSN" type="text" placeholder="Serial no."></label>
+          <label class="fld"><span>Target / prism</span><input id="target" type="text" placeholder="Target / prism"></label>
+          <label class="fld"><span>Prism constant</span><input id="prismConst" type="text" placeholder="Constant / serial"></label>
+          <label class="fld span-row"><span>Equipment notes</span><input id="equipNotes" type="text" placeholder="Other equipment"></label>
+          <label class="fld span-row"><span>Remarks / issues</span><textarea id="remarks" placeholder="Closing remarks"></textarea></label>
+        </div>
+      </div>
+    </div>
+
+    <div class="hero-actions">
+      <button type="button" class="hero safety" id="btnSafety">Start of day — Safety / JSA<span class="sub">Job safety analysis and crew sign-in</span></button>
+      <div class="hero-row">
+        <button type="button" class="hero secondary" id="btnGnss">Base setup (GNSS)<span class="sub">Height, antenna, session</span></button>
+        <button type="button" class="hero secondary" id="btnTs">Total station setup<span class="sub">HI, HT, backsight check</span></button>
+      </div>
+      <div class="hero-row">
+        <button type="button" class="hero photo" id="btnPhoto">Photo<span class="sub">Capture, watermark, name by point</span></button>
+        <button type="button" class="hero secondary" id="btnSketch">Sketch<span class="sub">Plan view, saved with the day</span></button>
+      </div>
+    </div>
+
+    <p class="hint" style="margin:0 0 8px">Log something else</p>
+    <div class="more-log" id="moreLog"></div>
+
+    <div class="card flat">
+      <h2>Today’s log</h2>
+      <div class="timeline" id="timeline"></div>
+    </div>
+
+    <div class="card" id="importCard">
+      <h2>Import</h2>
+      <p class="hint">Control lists, point files, and Trimble JobXML (.jxl) stay on this device. Native .job files are not opened — export .jxl from Trimble Access or TBC first.</p>
+      <div class="actions" style="margin-top:0">
+        <button type="button" class="btn" id="btnImportControl">Import control CSV</button>
+        <button type="button" class="btn" id="btnImportPoints">Import points CSV/TXT</button>
+        <button type="button" class="btn" id="btnImportRef">Attach reference PDF/image</button>
+        <button type="button" class="btn" id="btnImportJxl">Import Trimble JobXML (.jxl)</button>
+      </div>
+      <div id="importSummary" class="hint" style="margin-top:8px"></div>
+    </div>
+
+  </section>
+
+  <section id="view-level" class="view hidden">
+    <div class="card" id="levelPage">
+      <h2>Level notes</h2>
+      <p class="hint">Classic differential leveling. Enter a starting bench mark elevation (or pick imported control). HI and elevations compute as you type. No sample values are filled in.</p>
+      <div id="levelForm"></div>
+    </div>
+  </section>
+
+  <section id="view-daily" class="view hidden">
+    <div class="card" id="dailyPage">
+      <div id="dailyForm"></div>
+      <div class="actions" style="margin-top:12px">
+        <button type="button" class="btn" id="btnDailyFromLog">Fill detailed report from today's log</button>
+        <button type="button" class="btn btn-primary" id="btnDailyPrint">Print daily field report</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="view-manhole" class="view hidden">
+    <div class="card" id="manholePage">
+      <div id="mhForm"></div>
+      <div class="actions" style="margin-top:12px">
+        <button type="button" class="btn" id="btnMhAdd">Add manhole</button>
+        <button type="button" class="btn btn-primary" id="btnMhPrint">Print manhole dips</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="view-scan" class="view hidden">
+    <div class="card">
+      <h2>Scanning Notes</h2>
+      <p>This is a V2 placeholder. Laser-scanning field logs, start/stop times, and the live map will be built in the next phase. Nothing is logged here yet.</p>
+    </div>
+  </section>
+
+  <section id="view-reports" class="view hidden">
+    <div class="card" id="reportsCard">
+      <h2>Reports</h2>
+      <p class="hint">Print opens a page you can save as PDF. Then use Export package to pick what goes in the ZIP.</p>
+      <div class="actions" style="margin-top:0">
+        <button type="button" class="btn btn-primary" id="btnEod">Field notes</button>
+        <button type="button" class="btn" id="btnSafetyReport">Safety report</button>
+        <button type="button" class="btn" id="btnDailyReport">Daily field report</button>
+        <button type="button" class="btn" id="btnMhReport">Manhole dips</button>
+      </div>
+      <button type="button" class="hero eod" id="btnPackage" style="margin-top:12px">Export package (ZIP)<span class="sub">Choose reports, photos, sketches, and CSVs</span></button>
+      <button type="button" class="btn btn-block" id="btnCsv" style="margin-top:10px">Download entries CSV</button>
+    </div>
+  </section>
+  </main>
+
+  <div class="overlay hidden" id="overlay" role="dialog" aria-modal="true">
+    <div class="ov-bar">
+      <button type="button" class="btn btn-sm" id="ovClose">Close</button>
+      <h1 id="ovTitle">Entry</h1>
+      <div class="ov-step" id="ovStep"></div>
+    </div>
+    <div class="ov-body" id="ovBody"></div>
+    <div class="ov-foot" id="ovFoot"></div>
+  </div>
+
+  <input id="cameraInput" class="hidden" type="file" accept="image/*" capture="environment">
+  <input id="libraryInput" class="hidden" type="file" accept="image/*">
+  <input id="controlInput" class="hidden" type="file" accept=".csv,text/csv,text/plain">
+  <input id="pointsInput" class="hidden" type="file" accept=".csv,.txt,text/csv,text/plain">
+  <input id="refInput" class="hidden" type="file" accept="application/pdf,image/*">
+  <input id="profileInput" class="hidden" type="file" accept="application/json,.json">
+  <input id="logoInput" class="hidden" type="file" accept="image/*">
+  <input id="jxlInput" class="hidden" type="file" accept=".jxl,.job,.xml,application/xml,text/xml">
+  <div class="toast" id="toast" role="status"></div>
+
+  <script src="./js/vendor/jszip.min.js"></script>
+  <script src="./js/vendor/proj4.js"></script>
+  <script src="./js/vendor/leaflet/leaflet.js"></script>
+  <script src="./js/platform.js"></script>
+  <script src="./js/crs.js"></script>
+  <script src="./js/weather.js"></script>
+  <script src="./js/jxl.js"></script>
+  <script src="./js/idb.js"></script>
+  <script src="./js/bundled-data.js"></script>
+  <script src="./js/app.js"></script>
+</body>
+</html>

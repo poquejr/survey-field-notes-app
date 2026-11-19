@@ -1,0 +1,159 @@
+{
+  "schemaVersion": 1,
+  "id": "generic-default",
+  "companyName": "",
+  "logoDataUrl": "",
+  "codebook": {
+    "note": "Codes are supplied by the company. The core app ships none.",
+    "codes": []
+  },
+  "jsa": {
+    "title": "JOB SAFETY ANALYSIS",
+    "signOffTitle": "CREW SIGN-IN",
+    "printNameLabel": "PRINT NAME",
+    "signLabel": "SIGN",
+    "hospitalTitle": "NEAREST HOSPITAL / EMERGENCY",
+    "commentsLabel": "COMMENTS:",
+    "infoColumn": "ADDITIONAL INFO",
+    "mitigateColumn": "MITIGATING FACTORS",
+    "ppeTitle": "PPE REQUIRED",
+    "otherHospitalLabel": "Other",
+    "hazardSections": [
+      {
+        "id": "environmental",
+        "title": "ENVIRONMENTAL",
+        "items": [
+          "VEHICLE / ROADWAY TRAFFIC",
+          "PEDESTRIAN TRAFFIC",
+          "WEATHER / HEAT / COLD",
+          "WILDLIFE / INSECTS",
+          "UNEVEN TERRAIN / SLOPES",
+          "VEGETATION",
+          "NIGHT / LOW LIGHT"
+        ],
+        "customRows": 2
+      },
+      {
+        "id": "construction",
+        "title": "CONSTRUCTION / SITE",
+        "items": [
+          "HEAVY EQUIPMENT",
+          "EXCAVATIONS / TRENCHES",
+          "OVERHEAD WORK / FALLING OBJECTS",
+          "PINCH / PUNCTURE",
+          "CHEMICALS / FUEL"
+        ],
+        "customRows": 2
+      },
+      {
+        "id": "utility",
+        "title": "UTILITIES",
+        "items": [
+          "ELECTRIC (OVERHEAD / UNDERGROUND)",
+          "GAS",
+          "WATER / SEWER / STORM"
+        ],
+        "customRows": 3
+      }
+    ],
+    "ppe": {
+      "items": [
+        "HIGH-VISIBILITY VEST",
+        "GLOVES",
+        "HARD HAT",
+        "SAFETY-TOE FOOTWEAR",
+        "SAFETY GLASSES",
+        "HEARING PROTECTION",
+        "FALL PROTECTION"
+      ],
+      "customCount": 4
+    }
+  },
+  "hospitals": [],
+  "emergencyContacts": [
+    {
+      "label": "Emergency services",
+      "value": "911"
+    }
+  ],
+  "tolerances": {
+    "backsightCheckFt": null,
+    "levelClosureFt": null,
+    "traverseClosure": null,
+    "note": "Leave null unless the company sets official values. The app does not assume a default. For level notes, set levelClosureK; the formula is levelClosureFormula (default expression k*sqrt(km)). Leave K null if the company has not set a standard.",
+    "levelClosureFormula": "k*sqrt(km)",
+    "levelClosureK": null
+  },
+  "photo": {
+    "watermarkFields": [
+      "jobNo",
+      "pointNo",
+      "dateTime",
+      "crew",
+      "gps",
+      "description"
+    ],
+    "filenamePattern": "{pointNo}_{jobNo}_{yyyyMMdd-HHmm}.jpg",
+    "multiSuffix": "_{n}"
+  },
+  "exportMapping": {
+    "csv": {
+      "job_no": "jobNo",
+      "job_name": "jobName",
+      "date": "date",
+      "party_chief": "partyChief",
+      "chainman": "chainman",
+      "crew": "crew"
+    },
+    "smartsheet": {
+      "workspaceHint": "",
+      "sheetHint": "",
+      "columns": {
+        "Job No": "jobNo",
+        "Job Name": "jobName",
+        "Date": "date",
+        "Party Chief": "partyChief"
+      }
+    }
+  },
+  "dailyReport": {
+    "title": "DAILY FIELD REPORT",
+    "projectNameLabel": "Project Name:",
+    "clientLabel": "Client:",
+    "dateReceivedLabel": "Date Received:",
+    "jobNumberLabel": "Job Number:",
+    "workOrderedByLabel": "Work Ordered By:",
+    "datePerformedLabel": "Date Work Performed:",
+    "receivedByLabel": "Received By:",
+    "onSiteTitle": "On-Site Time",
+    "offSiteTitle": "Off-Site Time",
+    "travelTitle": "Travel Time",
+    "personnelLabel": "Personnel",
+    "regHoursLabel": "Reg. Hours",
+    "otHoursLabel": "OT Hours",
+    "phaseLabel": "Phase",
+    "taskLabel": "Task",
+    "crewLabel": "Crew",
+    "crewRows": [
+      "1 Person Crew",
+      "2 Person Crew",
+      "3 Person Crew"
+    ],
+    "detailedTitle": "Detailed Work Report",
+    "lodgingLabel": "Lodging?",
+    "overnightLabel": "Overnight",
+    "mealsLabel": "Meals?",
+    "otherExpensesLabel": "Other Expenses?",
+    "repOnSiteLabel": "Rep. on site?",
+    "mileageLabel": "Mileage:",
+    "fromOfficeLabel": "From what Office:",
+    "ynHint": "Y / N",
+    "authorizationNote": "Signatures authorize on-site work and hours as stated above.",
+    "crewSignerLabel": "Party Chief / Crew",
+    "clientSignerLabel": "Authorized Client / Site Representative",
+    "clientSignerOptional": true,
+    "nameLabel": "Name:",
+    "signedLabel": "Signed:",
+    "dateLabel": "Date:"
+  }
+}
