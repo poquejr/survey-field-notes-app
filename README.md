@@ -1,6 +1,6 @@
 # Field Notes
 
-Brand-neutral, offline-first field book PWA for survey crews. Company-specific JSA labels, hospital list, codebook, tolerances, watermark and file-name pattern, and export mapping come from a swappable **company profile**. Settings → Company Profile can import and export that JSON.
+Brand-neutral, offline-first field book PWA for survey crews. Company-specific codebook, tolerances, watermark and file-name pattern, and export mapping come from a swappable **company profile**. Settings → Company Profile can import and export that JSON.
 
 **Live app:** https://poquejr.github.io/survey-field-notes-app/
 
@@ -8,10 +8,12 @@ Factory default: `presets/generic-default.json` (set in `config.json`). Optional
 
 ## What’s in this build
 
-- Daily field book, level notes, safety / JSA, daily field report, and manhole dips
+- Daily field book, level notes, daily field report, and manhole dips
 - Control CSV import (column mapping is remembered) and KMZ / KML for Google Earth
 - Field tools: units, inverse, traverse / COGO, curves, level-loop closure, area, grid ↔ ground (you enter the combined scale factor), CA State Plane ↔ lat/lon, and an OPUS text / XML reader
 - **Finish Day:** one tap builds a `JobNo_YYYYMMDD_Crew.zip` folder with the day’s PDFs, CSVs, photos, OPUS summaries, and `Job.kmz`. Each part can be turned off; items that have data are on by default
+
+The Safety / JSA sheet is not in this build.
 
 The app also works from a `file://` copy for crews without a server (the service worker is not registered in that mode). For install and GPS, serve it over HTTPS.
 

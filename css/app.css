@@ -414,3 +414,9 @@ input::placeholder, textarea::placeholder { color: #8a887e; opacity: 1; }
 #crsBody { margin-top: 10px; }
 input::placeholder { color: #8a887e; opacity: 1; }
 @media (max-width: 380px) { .tools-grid { grid-template-columns: 1fr; } }
+
+.resid-table { width: 100%; border-collapse: collapse; margin: 8px 0 12px; }
+.resid-table th, .resid-table td { border: 1px solid var(--rule); padding: 6px; text-align: left; vertical-align: middle; }
+.resid-table th { font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); font-weight: 700; background: var(--paper-2); }
+.resid-table td input { min-height: 44px; width: 100%; }
+.resid-table tr th:first-child { width: 28%; color: var(--ink); text-transform: none; letter-spacing: 0; font-size: 14px; }

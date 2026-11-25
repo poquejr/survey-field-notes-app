@@ -92,7 +92,8 @@
       instMake: "", instSN: "", dcMake: "", dcSN: "", target: "", prismConst: "",
       equipNotes: "", remarks: "",
       crsZone: "", crsDatum: "", crsEpoch: "", crsEpochConfirmed: false,
-      crsUnits: "", crsVertical: "", crsGeoid: "", crsScaleFactor: "",
+      crsUnits: "us-ft", crsVertical: "", crsGeoid: "", crsScaleFactor: "",
+      crsScaleOne: false,
       crsFromJxl: "",
       pointStart: "", pointEnd: ""
     };
@@ -114,8 +115,10 @@
     var h = state.header;
     return {
       crsZone: h.crsZone, crsDatum: h.crsDatum, crsEpoch: h.crsEpoch,
-      crsEpochConfirmed: !!h.crsEpochConfirmed, crsUnits: h.crsUnits,
-      crsVertical: h.crsVertical, crsGeoid: h.crsGeoid, crsScaleFactor: h.crsScaleFactor
+      crsEpochConfirmed: !!h.crsEpochConfirmed, crsUnits: h.crsUnits || "us-ft",
+      crsVertical: h.crsVertical, crsGeoid: h.crsGeoid,
+      crsScaleOne: !!h.crsScaleOne,
+      crsScaleFactor: h.crsScaleOne ? "1" : h.crsScaleFactor
     };
   }
   function requireCrs(action) {
@@ -181,6 +184,11 @@
     if ($("menuJobLine")) $("menuJobLine").textContent = line;
     if ($("headerSummary")) $("headerSummary").textContent = line;
   }
+  function syncScaleOneUi() {
+    var on = $("crsScaleOne") && $("crsScaleOne").checked;
+    if ($("crsScaleFactorWrap")) $("crsScaleFactorWrap").classList.toggle("hidden", !!on);
+    if (on && $("crsScaleFactor")) $("crsScaleFactor").value = "1";
+  }
   function updateCrsStatus() {
     var ok = FNCrs.isComplete(crsObj());
     var el = $("crsStatus");
@@ -208,8 +216,10 @@
       else el.value = h[k] || "";
     });
     if ($("crsEpochConfirmed")) $("crsEpochConfirmed").checked = !!h.crsEpochConfirmed;
+    if ($("crsScaleOne")) $("crsScaleOne").checked = !!h.crsScaleOne;
     if ($("weatherMeta")) $("weatherMeta").textContent = h.weatherMeta || "";
     fillCrsOptions();
+    syncScaleOneUi();
     updateCrsStatus();
     updateMenuLine();
     updatePointRangeDisplay();
@@ -222,11 +232,16 @@
       state.header[k] = el.type === "checkbox" ? el.checked : el.value;
     });
     if ($("crsEpochConfirmed")) state.header.crsEpochConfirmed = $("crsEpochConfirmed").checked;
+    if ($("crsScaleOne")) {
+      state.header.crsScaleOne = $("crsScaleOne").checked;
+      if (state.header.crsScaleOne) state.header.crsScaleFactor = "1";
+    }
+    syncScaleOneUi();
     updateCrsStatus();
     updateMenuLine();
   }
   function bindHeader() {
-    SIMPLE.concat(["crsEpochConfirmed"]).forEach(function (k) {
+    SIMPLE.concat(["crsEpochConfirmed", "crsScaleOne"]).forEach(function (k) {
       var el = $(k);
       if (!el) return;
       el.addEventListener("input", function () { readHeader(); scheduleSave(); });
@@ -313,7 +328,7 @@
       throw new Error("missing");
     });
   }
-  function validateProfile(pr) { return pr && pr.schemaVersion && pr.jsa && typeof pr.jsa === "object"; }
+  function validateProfile(pr) { return !!(pr && pr.schemaVersion); }
   function setProfile(pr) {
     if (!validateProfile(pr)) throw new Error("Invalid company profile");
     profile = pr;
@@ -331,16 +346,15 @@
     var opts = bundled.map(function (b) {
       return '<option value="' + esc(b.id) + '"' + ((profile && profile.id === b.id) ? " selected" : "") + ">" + esc(b.label || b.id) + "</option>";
     }).join("");
-    var hospN = ((profile && profile.hospitals) || []).length;
     var codesN = (profile && profile.codebook && profile.codebook.codes) ? profile.codebook.codes.length : 0;
     $("ovBody").innerHTML =
-      '<p class="hint">The app is generic. Load a company profile for JSA labels, hospitals, codebook, tolerances, watermark, and export mapping.</p>' +
+      '<p class="hint">The app is generic. Load a company profile for codebook, tolerances, watermark, and export mapping.</p>' +
       '<div class="card"><div class="grid g2">' +
       '<label class="fld span-row"><span>Company name</span><input id="setCompany" type="text" value="' + esc((profile && profile.companyName) || "") + '"></label>' +
       '<label class="fld span-row"><span>Bundled profiles</span><select id="setBundled">' + opts + "</select></label></div>" +
       (profile && profile.logoDataUrl ? '<p style="margin-top:8px"><img alt="Company logo" src="' + esc(profile.logoDataUrl) + '" style="max-height:48px"></p>' : "") +
       '<div class="actions"><button type="button" class="btn" id="setLogo">Upload logo</button><button type="button" class="btn" id="setLogoClear">Clear logo</button></div>' +
-      '<p class="hint" style="margin-top:10px">Hospitals in profile: ' + hospN + " · Codebook codes: " + codesN + " (none are invented by the app).</p></div>" +
+      '<p class="hint" style="margin-top:10px">Codebook codes: ' + codesN + " (none are invented by the app).</p></div>" +
       '<div class="actions"><button type="button" class="btn btn-primary" id="setLoad">Load bundled</button>' +
       '<button type="button" class="btn" id="setImport">Import JSON</button><button type="button" class="btn" id="setExport">Export JSON</button></div>';
     $("ovFoot").innerHTML = '<button type="button" class="btn btn-primary" id="setSave">Save name / logo</button>';
@@ -371,179 +385,6 @@
     };
     reader.readAsText(file);
   }
-
-  function jsaModel() {
-    var j = state.jsa || emptyJsa();
-    if (!j.hazards) j.hazards = {};
-    if (!j.ppe) j.ppe = {};
-    return j;
-  }
-  function openJsa() {
-    var jsa = jsaModel();
-    var tmpl = (profile && profile.jsa) || genericFallback().jsa;
-    if (!state.jsa) {
-      state.jsa = jsa;
-      jsa.date = state.header.date;
-      jsa.jobNo = state.header.jobNo;
-      jsa.jobName = state.header.projectTitle || state.header.jobName;
-    }
-    openOverlay(tmpl.title || "Safety sheet");
-    var html = '<div class="jsa-form"><h1 class="jsa-title">' + esc(tmpl.title || "JOB SAFETY ANALYSIS") + "</h1>";
-    html += '<div class="jsa-head">';
-    html += '<label class="fld"><span>Date:</span><input id="jsaDate" type="date" value="' + esc(jsa.date || state.header.date || "") + '"></label>';
-    html += '<label class="fld"><span>Job No.</span><input id="jsaJobNo" type="text" value="' + esc(jsa.jobNo || state.header.jobNo || "") + '"></label>';
-    html += '<label class="fld span-row"><span>Job Name:</span><input id="jsaJobName" type="text" value="' + esc(jsa.jobName || state.header.projectTitle || "") + '"></label>';
-    html += '<label class="fld"><span>Task:</span><input id="jsaTask" type="text" value="' + esc(jsa.task || "") + '"></label>';
-    html += '<label class="fld"><span>Location:</span><div style="display:flex;gap:6px"><input id="jsaLoc" type="text" value="' + esc(jsa.location || "") + '" style="flex:1"><button type="button" class="btn btn-sm" id="jsaGps">Use GPS</button></div></label></div>';
-    (tmpl.hazardSections || []).forEach(function (sec) {
-      html += '<div class="jsa-sec-hd"><div>' + esc(sec.title) + "</div><div>" + esc(tmpl.infoColumn || "ADDITIONAL INFO") + "</div><div>" + esc(tmpl.mitigateColumn || "MITIGATING FACTORS") + "</div></div>";
-      var items = (sec.items || []).map(function (label, i) { return { key: sec.id + ":" + i, label: label, custom: false }; });
-      for (var c = 0; c < (sec.customRows || 0); c++) items.push({ key: sec.id + ":c" + c, label: "", custom: true });
-      items.forEach(function (it) {
-        var row = (jsa.hazards[it.key] || {});
-        html += '<div class="jsa-row"><div class="jsa-check"><input type="checkbox" data-hz="' + esc(it.key) + '" data-k="on"' + (row.on ? " checked" : "") + ">";
-        if (it.custom) html += '<input class="custom-lab" type="text" data-hz="' + esc(it.key) + '" data-k="label" value="' + esc(row.label || "") + '">';
-        else html += "<span>" + esc(it.label) + "</span>";
-        html += '</div><div><span class="jsa-col-label">' + esc(tmpl.infoColumn || "") + '</span><input type="text" data-hz="' + esc(it.key) + '" data-k="info" value="' + esc(row.info || "") + '"></div>';
-        html += '<div><span class="jsa-col-label">' + esc(tmpl.mitigateColumn || "") + '</span><input type="text" data-hz="' + esc(it.key) + '" data-k="mitigate" value="' + esc(row.mitigate || "") + '"></div></div>';
-      });
-    });
-    html += '<div class="jsa-ppe"><h2>' + esc(tmpl.ppeTitle || "PPE REQUIRED") + '</h2><div class="ppe-grid">';
-    (tmpl.ppe && tmpl.ppe.items || []).forEach(function (lab, i) {
-      html += '<label><input type="checkbox" data-ppe="p' + i + '"' + ((jsa.ppe && jsa.ppe["p" + i]) ? " checked" : "") + "> " + esc(lab) + "</label>";
-    });
-    for (var i = 0; i < ((tmpl.ppe && tmpl.ppe.customCount) || 0); i++) {
-      var cv = (jsa.ppeCustom && jsa.ppeCustom["c" + i]) || { on: false, label: "" };
-      html += '<label><input type="checkbox" data-ppec="c' + i + '"' + (cv.on ? " checked" : "") + '><input type="text" data-ppecl="c' + i + '" value="' + esc(cv.label || "") + '"></label>';
-    }
-    html += '</div></div><div class="jsa-bottom"><div class="jsa-sign"><h2>' + esc(tmpl.signOffTitle || "CREW SIGN-IN") + '</h2><div id="jsaSigners"></div><div class="actions"><button type="button" class="btn" id="jsaAddSigner">Add signer</button></div></div>';
-    html += '<div class="jsa-hosp"><h2>' + esc(tmpl.hospitalTitle || "NEAREST HOSPITAL") + '</h2><div class="actions"><button type="button" class="btn btn-sm" id="jsaNear">Find nearest from my GPS</button></div><div id="jsaHospList"></div></div></div>';
-    html += '<div class="jsa-comments"><label class="fld"><span>' + esc(tmpl.commentsLabel || "COMMENTS:") + '</span><textarea id="jsaComments">' + esc(jsa.comments || "") + "</textarea></label></div>";
-    var em = (profile && profile.emergencyContacts) || [];
-    if (em.length) html += '<div class="jsa-comments hint">' + em.map(function (e) { return esc((e.label || "") + (e.value ? ": " + e.value : "")); }).join(" · ") + "</div>";
-    html += "</div>";
-    $("ovBody").innerHTML = html;
-    $("ovFoot").innerHTML = '<button type="button" class="btn btn-primary" id="jsaSave">Save JSA</button>';
-    renderJsaHospitals(); renderJsaSigners(); bindJsa();
-  }
-  function renderJsaHospitals() {
-    var hospitals = (profile && profile.hospitals) || [];
-    var jsa = jsaModel();
-    var otherLab = (profile && profile.jsa && profile.jsa.otherHospitalLabel) || "Other";
-    var html = hospitals.map(function (h) {
-      var dist = h._dist != null ? '<span class="dist">' + Number(h._dist).toFixed(1) + " mi</span>" : "";
-      return '<label class="hosp-item"><input type="radio" name="jsaHosp" value="' + esc(h.id) + '"' + (jsa.hospitalId === h.id ? " checked" : "") + "> <span>" + esc(h.label) + "</span>" + dist + "</label>";
-    }).join("");
-    html += '<label class="hosp-item"><input type="radio" name="jsaHosp" value="other"' + (jsa.hospitalId === "other" ? " checked" : "") + "> " + esc(otherLab) +
-      ' <input type="text" id="jsaHospOther" value="' + esc(jsa.hospitalOther || "") + '" style="flex:1"></label>';
-    var list = $("jsaHospList");
-    if (list) list.innerHTML = html;
-  }
-  function renderJsaSigners() {
-    var jsa = jsaModel();
-    if (!jsa.signers.length) jsa.signers = [{ name: "", ts: "", sigDataUrl: "" }];
-    var root = $("jsaSigners");
-    if (!root) return;
-    root.innerHTML = "";
-    jsa.signers.forEach(function (s) {
-      var div = document.createElement("div");
-      div.className = "sign-row";
-      div.innerHTML = '<label class="fld"><span>Print name</span><input type="text" data-signame value="' + esc(s.name || "") + '"></label><canvas width="400" height="144" data-sig></canvas><div class="actions"><button type="button" class="btn btn-sm" data-sigclear>Clear</button>' + (s.ts ? '<span class="hint">Signed ' + esc(s.ts) + "</span>" : "") + "</div>";
-      root.appendChild(div);
-      var cv = div.querySelector("canvas");
-      bindPad(cv, s);
-      if (s.sigDataUrl) { var img = new Image(); img.onload = function () { cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height); }; img.src = s.sigDataUrl; }
-      div.querySelector("[data-signame]").addEventListener("input", function (e) { s.name = e.target.value; });
-      div.querySelector("[data-sigclear]").addEventListener("click", function () { cv.getContext("2d").clearRect(0, 0, cv.width, cv.height); s.sigDataUrl = ""; s.ts = ""; });
-    });
-  }
-  function bindPad(canvas, signer) {
-    var ctx = canvas.getContext("2d"), draw = false, last = null;
-    function pos(e) {
-      var r = canvas.getBoundingClientRect();
-      var t = e.touches ? e.touches[0] : e;
-      return { x: (t.clientX - r.left) * (canvas.width / r.width), y: (t.clientY - r.top) * (canvas.height / r.height) };
-    }
-    function start(e) { e.preventDefault(); draw = true; last = pos(e); }
-    function move(e) {
-      if (!draw) return;
-      e.preventDefault();
-      var p = pos(e);
-      ctx.strokeStyle = "#111"; ctx.lineWidth = 2; ctx.lineCap = "round";
-      ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke(); last = p;
-    }
-    function end(e) { if (!draw) return; if (e) e.preventDefault(); draw = false; signer.sigDataUrl = canvas.toDataURL("image/png"); signer.ts = new Date().toISOString(); }
-    canvas.addEventListener("pointerdown", start);
-    canvas.addEventListener("pointermove", move);
-    canvas.addEventListener("pointerup", end);
-    canvas.addEventListener("pointerleave", end);
-  }
-  function bindJsa() {
-    $("jsaSave").onclick = saveJsa;
-    $("jsaAddSigner").onclick = function () { jsaModel().signers.push({ name: "", ts: "", sigDataUrl: "" }); renderJsaSigners(); };
-    $("jsaGps").onclick = function () {
-      FNPlatform.getLocation().then(function (pos) { $("jsaLoc").value = Number(pos.lat).toFixed(6) + ", " + Number(pos.lon).toFixed(6); })
-        .catch(function () { toast("Location unavailable — type the location"); });
-    };
-    if ($("jsaNear")) $("jsaNear").onclick = sortHospitals;
-  }
-  function saveJsa() {
-    var j = jsaModel();
-    j.date = $("jsaDate").value; j.jobNo = $("jsaJobNo").value; j.jobName = $("jsaJobName").value;
-    j.task = $("jsaTask").value; j.location = $("jsaLoc").value; j.comments = $("jsaComments").value;
-    j.hazards = j.hazards || {};
-    document.querySelectorAll("[data-hz]").forEach(function (el) {
-      var key = el.getAttribute("data-hz"), k = el.getAttribute("data-k");
-      if (!j.hazards[key]) j.hazards[key] = {};
-      j.hazards[key][k] = el.type === "checkbox" ? el.checked : el.value;
-    });
-    j.ppe = {}; j.ppeCustom = {};
-    document.querySelectorAll("[data-ppe]").forEach(function (el) { if (el.checked) j.ppe[el.getAttribute("data-ppe")] = true; });
-    document.querySelectorAll("[data-ppec]").forEach(function (el) {
-      var id = el.getAttribute("data-ppec");
-      var lab = document.querySelector('[data-ppecl="' + id + '"]');
-      j.ppeCustom[id] = { on: el.checked, label: lab ? lab.value : "" };
-    });
-    var hosp = document.querySelector('input[name="jsaHosp"]:checked');
-    j.hospitalId = hosp ? hosp.value : "";
-    j.hospitalOther = $("jsaHospOther") ? $("jsaHospOther").value : "";
-    state.jsa = j; saveNow(); toast("JSA saved"); closeOverlay();
-  }
-  function sortHospitals() {
-    var hospitals = (profile && profile.hospitals) || [];
-    if (!hospitals.length) { toast("This profile has no hospital list"); return; }
-    FNPlatform.getLocation().then(function (pos) {
-      var chain = Promise.resolve();
-      hospitals.forEach(function (h) {
-        chain = chain.then(function () {
-          if (h._lat != null) return;
-          var q = h.geocodeQuery || h.label;
-          return fetch("https://nominatim.openstreetmap.org/search?format=json&limit=1&q=" + encodeURIComponent(q), { headers: { "Accept": "application/json" } })
-            .then(function (r) { return r.json(); })
-            .then(function (rows) { if (rows && rows[0]) { h._lat = Number(rows[0].lat); h._lon = Number(rows[0].lon); } })
-            .catch(function () {})
-            .then(function () { return new Promise(function (res) { setTimeout(res, 1100); }); });
-        });
-      });
-      return chain.then(function () {
-        function hav(a, b, c, d) {
-          var R = 3958.7613, to = Math.PI / 180, dLat = (c - a) * to, dLon = (d - b) * to;
-          var s = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(a * to) * Math.cos(c * to) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-          return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
-        }
-        hospitals.forEach(function (h) { h._dist = (h._lat != null) ? hav(pos.lat, pos.lon, h._lat, h._lon) : null; });
-        hospitals.sort(function (a, b) {
-          if (a._dist == null && b._dist == null) return 0;
-          if (a._dist == null) return 1;
-          if (b._dist == null) return -1;
-          return a._dist - b._dist;
-        });
-        renderJsaHospitals();
-        toast("Hospitals sorted by distance. Pick one from the list — none were invented.");
-      });
-    }).catch(function () { toast("Location unavailable. Choose from the list, or Other."); });
-  }
-
 
   function pointKey(v) { return String(v == null ? "" : v).trim(); }
   function pointNumeric(v) {
@@ -813,21 +654,39 @@
     el.textContent = parts.join(" · ");
   }
 
-  var HEIGHT_METHOD_PH = "e.g. Bottom of quick release, Bottom of antenna mount, Slant to ARP, Top of notch";
-  var HEIGHT_METHOD_SUGGESTIONS = [
-    "Bottom of quick release",
-    "Bottom of antenna mount",
-    "Slant to ARP",
-    "Top of notch"
-  ];
-  /* Placeholder text is a hint only — never treat it as a saved value. */
-  function readTyped(id, placeholder) {
-    var el = $(id);
-    var v = el ? String(el.value || "").trim() : "";
-    if (!v) return "";
-    if (placeholder && v.toLowerCase() === String(placeholder).toLowerCase()) return "";
-    if (placeholder && v.toLowerCase() === String(placeholder).replace(/^e\.g\.\s*/i, "").toLowerCase()) return "";
-    return v;
+  var GNSS_RX = ["R10", "R12", "R12i", "R980"];
+  function antennaReceiverFrom(f) {
+    f = f || {};
+    if (f.antennaReceiver) return String(f.antennaReceiver).trim();
+    var a = String(f.antenna || "").trim();
+    var r = String(f.receiver || "").trim();
+    if (a && r && a !== r) return a + " / " + r;
+    return a || r || "";
+  }
+  function antennaReceiverHtml(current) {
+    var cur = String(current || "").trim();
+    var known = GNSS_RX.indexOf(cur) >= 0;
+    var opts = ['<option value="">Select\u2026</option>'];
+    GNSS_RX.forEach(function (opt) {
+      opts.push('<option value="' + esc(opt) + '"' + (cur === opt ? " selected" : "") + ">" + esc(opt) + "</option>");
+    });
+    opts.push('<option value="__other__"' + (cur && !known ? " selected" : "") + ">Other</option>");
+    return '<label class="fld span-row"><span>Antenna / Receiver</span><select id="gAntRx">' + opts.join("") + "</select></label>" +
+      '<label class="fld span-row' + (cur && !known ? "" : " hidden") + '" id="gAntRxOtherWrap"><span>Other antenna / receiver</span>' +
+      '<input id="gAntRxOther" type="text" value="' + esc(known ? "" : cur) + '" placeholder="Type the model" autocomplete="off"></label>';
+  }
+  function bindAntennaReceiver() {
+    if (!$("gAntRx")) return;
+    $("gAntRx").addEventListener("change", function () {
+      var other = $("gAntRx").value === "__other__";
+      if ($("gAntRxOtherWrap")) $("gAntRxOtherWrap").classList.toggle("hidden", !other);
+      if (other && $("gAntRxOther")) $("gAntRxOther").focus();
+    });
+  }
+  function readAntennaReceiver() {
+    var sel = $("gAntRx") ? $("gAntRx").value : "";
+    if (sel === "__other__") return ($("gAntRxOther") && $("gAntRxOther").value.trim()) || "";
+    return sel || "";
   }
   function fieldHtml(id, label, value, opts) {
     opts = opts || {};
@@ -854,29 +713,27 @@
     $("ovBody").innerHTML = '<div class="grid g2">' +
       fieldHtml("gTime", "Time", ev.time, { type: "time" }) +
       fieldHtml("gPt", "Point / control used", ev.pointNo || f.occupied || f.station, { ph: "Point number", list: "ctrlList" }) +
-      fieldHtml("gAnt", "Antenna type", f.antenna) +
+      antennaReceiverHtml(antennaReceiverFrom(f)) +
       fieldHtml("gHt", "Antenna / instrument height", f.height, { ph: "Leave blank if not measured" }) +
-      fieldHtml("gHtType", "Height method", f.heightMethod, { ph: HEIGHT_METHOD_PH, suggestions: HEIGHT_METHOD_SUGGESTIONS, span: true }) +
-      fieldHtml("gRx", "Receiver", f.receiver, { ph: "Make / model" }) +
       fieldHtml("gStart", "Session start", f.sessionStart, { type: "time" }) +
       fieldHtml("gEnd", "Session end", f.sessionEnd, { type: "time" }) +
       fieldHtml("gNotes", "Notes", ev.notes, { span: true, type: "textarea" }) +
       "</div>";
     $("ovFoot").innerHTML = '<button type="button" class="btn btn-primary" id="gSave">Save setup</button>';
+    bindAntennaReceiver();
     $("gSave").onclick = function () {
       ev.time = $("gTime").value;
       ev.pointNo = $("gPt").value;
       ev.notes = $("gNotes").value;
-      ev.fields = {
-        occupied: ev.pointNo,
-        station: ev.pointNo,
-        antenna: $("gAnt").value,
-        height: $("gHt").value,
-        heightMethod: readTyped("gHtType", HEIGHT_METHOD_PH),
-        receiver: $("gRx").value,
-        sessionStart: $("gStart").value,
-        sessionEnd: $("gEnd").value
-      };
+      var ant = readAntennaReceiver();
+      ev.fields = ev.fields || {};
+      ev.fields.occupied = ev.pointNo;
+      ev.fields.station = ev.pointNo;
+      ev.fields.antennaReceiver = ant;
+      ev.fields.antenna = ant;
+      ev.fields.height = $("gHt").value;
+      ev.fields.sessionStart = $("gStart").value;
+      ev.fields.sessionEnd = $("gEnd").value;
       ev.type = "gnss_base";
       var warn = warnIfPointIssue(ev.pointNo, ev.id);
       ev.warnOutside = warn.outside; ev.warnDuplicate = warn.duplicate;
@@ -888,85 +745,109 @@
   function gnssSummary(ev) {
     var f = (ev && ev.fields) || {};
     var parts = [];
-    if (f.antenna) parts.push("Antenna " + f.antenna);
+    var ant = antennaReceiverFrom(f);
+    if (ant) parts.push("Antenna / Receiver " + ant);
     if (f.height) parts.push("Height " + f.height + (f.heightMethod ? " (" + f.heightMethod + ")" : ""));
     else if (f.heightMethod) parts.push("Height method " + f.heightMethod);
-    if (f.receiver) parts.push("Receiver " + f.receiver);
-    if (f.sessionStart || f.sessionEnd) parts.push("Session " + (f.sessionStart || "—") + "–" + (f.sessionEnd || "—"));
-    return parts.join(" · ");
+    if (f.sessionStart || f.sessionEnd) parts.push("Session " + (f.sessionStart || "\u2014") + "\u2013" + (f.sessionEnd || "\u2014"));
+    return parts.join(" \u00b7 ");
   }
   var TS_HI_METHODS = ["True height", "Bottom of notch"];
   function tsHiMethodSelect(current) {
     var cur = String(current || "").trim();
-    var opts = ['<option value="">Select…</option>'];
+    var opts = ['<option value="">Select\u2026</option>'];
     TS_HI_METHODS.forEach(function (opt) {
       opts.push('<option value="' + esc(opt) + '"' + (cur === opt ? " selected" : "") + ">" + esc(opt) + "</option>");
     });
     if (cur && TS_HI_METHODS.indexOf(cur) < 0) {
       opts.push('<option value="' + esc(cur) + '" selected>' + esc(cur) + "</option>");
     }
-    return '<label class="fld span-row"><span>HI method</span><select id="tHIMethod">' + opts.join("") + "</select></label>";
+    return '<label class="fld"><span>HI method</span><select id="tHIMethod">' + opts.join("") + "</select></label>";
+  }
+  function emptyResiduals() {
+    return {
+      horizontal: { obs: "", residual: "" },
+      vertical: { obs: "", residual: "" },
+      distance: { obs: "", residual: "" }
+    };
+  }
+  function residualsFrom(ev) {
+    var src = (ev && ev.fields && ev.fields.residuals) || (ev && ev.residuals) || {};
+    var out = emptyResiduals();
+    ["horizontal", "vertical", "distance"].forEach(function (k) {
+      var r = src[k] || {};
+      out[k].obs = r.obs || r.observed || "";
+      out[k].residual = r.residual || r.res || "";
+    });
+    return out;
+  }
+  function residualsHtml(res) {
+    function row(key, label) {
+      var r = res[key] || {};
+      return "<tr><th>" + label + "</th>" +
+        '<td><input id="r' + key + 'Obs" type="text" inputmode="decimal" value="' + esc(r.obs || "") + '" placeholder="Observed" autocomplete="off"></td>' +
+        '<td><input id="r' + key + 'Res" type="text" inputmode="decimal" value="' + esc(r.residual || "") + '" placeholder="e.g. -0.012" autocomplete="off"></td></tr>';
+    }
+    return '<h2>Residuals</h2><p class="hint">Enter observed and residual values. Residuals are signed (for example -0.012). Nothing is calculated or filled in.</p>' +
+      '<table class="resid-table"><thead><tr><th></th><th>Observed</th><th>Residual</th></tr></thead><tbody>' +
+      row("horizontal", "Horizontal") + row("vertical", "Vertical") + row("distance", "Distance") +
+      "</tbody></table>";
+  }
+  function readResiduals() {
+    function val(id) { return $(id) ? String($(id).value || "").trim() : ""; }
+    return {
+      horizontal: { obs: val("rhorizontalObs"), residual: val("rhorizontalRes") },
+      vertical: { obs: val("rverticalObs"), residual: val("rverticalRes") },
+      distance: { obs: val("rdistanceObs"), residual: val("rdistanceRes") }
+    };
+  }
+  function residualsSummary(res) {
+    res = res || {};
+    var parts = [];
+    [["horizontal", "H"], ["vertical", "V"], ["distance", "D"]].forEach(function (pair) {
+      var r = res[pair[0]] || {};
+      if (r.obs || r.residual) parts.push(pair[1] + " obs " + (r.obs || "\u2014") + "  res " + (r.residual || "\u2014"));
+    });
+    return parts.join(" \u00b7 ");
+  }
+  function tsSummary(ev) {
+    var f = (ev && ev.fields) || {};
+    var parts = [];
+    if (f.hi) parts.push("HI " + f.hi + (f.hiMethod ? " (" + f.hiMethod + ")" : ""));
+    else if (f.hiMethod) parts.push("HI method " + f.hiMethod);
+    if (f.bsPt) parts.push("BS " + f.bsPt);
+    if (f.ht) parts.push("HR " + f.ht + (f.htMethod ? " (" + f.htMethod + ")" : ""));
+    else if (f.htMethod) parts.push("HR method " + f.htMethod);
+    var rs = residualsSummary(f.residuals || ev.residuals);
+    if (rs) parts.push(rs);
+    return parts.join(" \u00b7 ");
   }
   function openTs(existing) {
-    var ev = existing || { id: uid(), type: "ts_setup", time: nowTime(), ts: new Date().toISOString(), fields: {}, check: emptyCheck() };
+    var ev = existing || { id: uid(), type: "ts_setup", time: nowTime(), ts: new Date().toISOString(), fields: {} };
     var f = ev.fields || {};
-    var ch = ev.check || emptyCheck();
-    if (!ch.tol && profile && profile.tolerances && profile.tolerances.backsightCheckFt != null) {
-      ch.tol = String(profile.tolerances.backsightCheckFt);
-    }
+    var res = residualsFrom(ev);
     openOverlay("Total station setup", existing ? "Edit" : "New");
     $("ovBody").innerHTML = '<div class="grid g2">' +
-      fieldHtml("tTime", "Time", ev.time, { type: "time" }) +
       fieldHtml("tOcc", "Occupied point", ev.pointNo || f.occupied, { list: "ctrlList" }) +
+      fieldHtml("tBs", "Backsight point", f.bsPt, { list: "ctrlList" }) +
       fieldHtml("tHI", "Instrument height (HI)", f.hi, { ph: "Leave blank if not measured" }) +
       tsHiMethodSelect(f.hiMethod) +
-      fieldHtml("tBs", "Backsight point", f.bsPt, { list: "ctrlList" }) +
-      fieldHtml("tHT", "Target height (HT)", f.ht) +
-      fieldHtml("tHTMethod", "HT method", f.htMethod) +
-      fieldHtml("tAz", "Azimuth / circle", f.azimuth) +
-      '</div><h2>Backsight check</h2><p class="hint">Residual = observed − record. Pass/fail uses the tolerance you enter (or the company profile, if set). No default is assumed.</p><div class="grid g2">' +
-      fieldHtml("cPt", "Check point", ch.pt) +
-      fieldHtml("cTol", "Tolerance", ch.tol, { ph: "Same units as the observations" }) +
-      fieldHtml("cHdO", "HD observed", ch.hdObs) + fieldHtml("cHdR", "HD record", ch.hdRec) +
-      fieldHtml("cElO", "Elev observed", ch.elevObs) + fieldHtml("cElR", "Elev record", ch.elevRec) +
-      fieldHtml("cNO", "N observed", ch.nObs) + fieldHtml("cNR", "N record", ch.nRec) +
-      fieldHtml("cEO", "E observed", ch.eObs) + fieldHtml("cER", "E record", ch.eRec) +
-      '</div><p class="hint" id="tRes"></p>' +
+      fieldHtml("tHT", "HR / target height", f.ht) +
+      fieldHtml("tHTMethod", "HR / target method", f.htMethod) +
+      "</div>" + residualsHtml(res) +
       fieldHtml("tNotes", "Notes", ev.notes, { span: true, type: "textarea" });
     $("ovFoot").innerHTML = '<button type="button" class="btn btn-primary" id="tSave">Save setup</button>';
-    function readCheck() {
-      return {
-        pt: $("cPt").value, tol: $("cTol").value,
-        hdObs: $("cHdO").value, hdRec: $("cHdR").value,
-        elevObs: $("cElO").value, elevRec: $("cElR").value,
-        nObs: $("cNO").value, nRec: $("cNR").value,
-        eObs: $("cEO").value, eRec: $("cER").value
-      };
-    }
-    function showRes() {
-      var c = readCheck();
-      var st = checkStatus(c);
-      $("tRes").textContent = "HD " + fmtRes(residual(c.hdObs, c.hdRec)) +
-        " · dZ " + fmtRes(residual(c.elevObs, c.elevRec)) +
-        " · dN " + fmtRes(residual(c.nObs, c.nRec)) +
-        " · dE " + fmtRes(residual(c.eObs, c.eRec)) +
-        " · " + st;
-    }
-    ["cHdO","cHdR","cElO","cElR","cNO","cNR","cEO","cER","cTol"].forEach(function (id) {
-      $(id).addEventListener("input", showRes);
-    });
-    showRes();
     $("tSave").onclick = function () {
-      ev.time = $("tTime").value;
       ev.pointNo = $("tOcc").value;
       ev.notes = $("tNotes").value;
-      ev.check = readCheck();
-      ev.status = checkStatus(ev.check);
-      ev.fields = {
-        occupied: ev.pointNo, hi: $("tHI").value, hiMethod: $("tHIMethod").value,
-        bsPt: $("tBs").value, ht: $("tHT").value, htMethod: $("tHTMethod").value,
-        azimuth: $("tAz").value
-      };
+      ev.fields = ev.fields || {};
+      ev.fields.occupied = ev.pointNo;
+      ev.fields.hi = $("tHI").value;
+      ev.fields.hiMethod = $("tHIMethod").value;
+      ev.fields.bsPt = $("tBs").value;
+      ev.fields.ht = $("tHT").value;
+      ev.fields.htMethod = $("tHTMethod").value;
+      ev.fields.residuals = readResiduals();
       ev.type = "ts_setup";
       var warn = warnIfPointIssue(ev.pointNo, ev.id);
       ev.warnOutside = warn.outside; ev.warnDuplicate = warn.duplicate;
@@ -1067,10 +948,27 @@
     });
   }
   function openPhoto(existing) {
-    var ev = existing || { id: uid(), type: "photo", time: nowTime(), ts: new Date().toISOString(), fields: {} };
+    if (!existing) {
+      openOverlay("Photo", "Point number");
+      var last = state.currentPoint || "";
+      $("ovBody").innerHTML = '<p class="hint">Enter the point number first. The photo is named from it (1045_1.jpg, 1045_2.jpg, \u2026). The last point used is filled in when there is one \u2014 nothing is invented.</p>' +
+        fieldHtml("pPromptPt", "Point number", last, { ph: "e.g. 1045", list: "ctrlList", span: true });
+      $("ovFoot").innerHTML = '<button type="button" class="btn btn-primary" id="pPromptGo">Continue</button>';
+      if ($("pPromptPt")) { $("pPromptPt").focus(); $("pPromptPt").select && $("pPromptPt").select(); }
+      $("pPromptGo").onclick = function () {
+        var pt = ($("pPromptPt") && $("pPromptPt").value.trim()) || "";
+        if (!pt) { toast("Enter a point number for the photo name"); return; }
+        setCurrentPoint(pt);
+        var ev = { id: uid(), type: "photo", time: nowTime(), ts: new Date().toISOString(), fields: {}, pointNo: pt };
+        openPhotoForm(ev, false);
+      };
+      return;
+    }
+    openPhotoForm(existing, true);
+  }
+  function openPhotoForm(ev, isEdit) {
     photoDraft = ev;
-    openOverlay("Photo", existing ? "Edit" : "New");
-    if (!ev.pointNo) ev.pointNo = state.currentPoint || "";
+    openOverlay("Photo", isEdit ? "Edit" : "New");
     var gpsLine = ev.lat && ev.lon ? (ev.lat + ", " + ev.lon + (ev.gpsAccuracy ? " \u00b1" + ev.gpsAccuracy + " m" : "") + (ev.heading ? "  Hdg " + ev.heading : "")) : "";
     $("ovBody").innerHTML = '<div class="grid g2">' +
       fieldHtml("pTime", "Time", ev.time, { type: "time" }) +
@@ -1082,7 +980,7 @@
       '<button type="button" class="btn" id="pLib">Choose from library</button>' +
       '<button type="button" class="btn" id="pGps">Add GPS</button></div>' +
       '<p class="hint" id="pGpsLine">' + esc(gpsLine) + "</p>" +
-      '<p class="hint">The file is named from the point (1045_1.jpg, 1045_2.jpg, \u2026). The stamp includes job, date/time, point, code, GPS, heading, crew, and note when those are known — never invented.</p>';
+      '<p class="hint">The file is named from the point (1045_1.jpg, 1045_2.jpg, \u2026). The stamp includes job, date/time, point, code, GPS, heading, crew, and note when those are known \u2014 never invented.</p>';
     $("ovFoot").innerHTML = '<button type="button" class="btn btn-primary" id="pSave">Save photo</button>';
     function showPrev(url) {
       $("pPrev").innerHTML = url ? '<img alt="Photo preview" src="' + url + '">' : "";
@@ -1104,10 +1002,16 @@
       if ($("pGpsLine")) $("pGpsLine").textContent = line;
     }
     $("pCam").onclick = function () {
+      ev.pointNo = $("pPt") ? $("pPt").value : ev.pointNo;
+      if (!String(ev.pointNo || "").trim()) { toast("Enter a point number first"); return; }
       FNPlatform.getLocation().then(applyFix).catch(function () {});
       $("cameraInput").click();
     };
-    $("pLib").onclick = function () { $("libraryInput").click(); };
+    $("pLib").onclick = function () {
+      ev.pointNo = $("pPt") ? $("pPt").value : ev.pointNo;
+      if (!String(ev.pointNo || "").trim()) { toast("Enter a point number first"); return; }
+      $("libraryInput").click();
+    };
     $("pGps").onclick = function () {
       FNPlatform.getLocation().then(applyFix).catch(function () { toast("Location unavailable"); });
     };
@@ -1119,6 +1023,7 @@
       ev.fields = ev.fields || {};
       ev.fields.code = ev.code || "";
       ev.type = "photo";
+      if (!String(ev.pointNo || "").trim()) { toast("Enter a point number for the photo name"); return; }
       if (!ev.fileId) { toast("Take or choose a photo first"); return; }
       var warn = warnIfPointIssue(ev.pointNo, ev.id);
       ev.warnOutside = warn.outside; ev.warnDuplicate = warn.duplicate;
@@ -1126,6 +1031,7 @@
       upsertEvent(ev); photoDraft = null; closeOverlay();
     };
   }
+
   function handlePhotoFile(file) {
     if (!file || !photoDraft) return;
     var ev = photoDraft;
@@ -1136,6 +1042,7 @@
         var when = new Date();
         ev.time = $("pTime") ? $("pTime").value || nowTime() : nowTime();
         ev.pointNo = $("pPt") ? $("pPt").value : ev.pointNo;
+        if (!String(ev.pointNo || "").trim()) { toast("Enter a point number for the photo name"); return; }
         ev.code = $("pCode") ? $("pCode").value : ev.code;
         ev.notes = $("pNote") ? $("pNote").value : ev.notes;
         ev.fields = ev.fields || {};
@@ -1344,8 +1251,9 @@
       ev.fields = {
         occupied: ev.pointNo, station: ev.pointNo,
         antenna: f.antennaType || "",
-        height: f.measuredHeight || "", heightMethod: f.heightMethod || "",
-        receiver: f.receiver || ""
+        receiver: f.receiver || "",
+        antennaReceiver: antennaReceiverFrom({ antenna: f.antennaType || "", receiver: f.receiver || "" }),
+        height: f.measuredHeight || "", heightMethod: f.heightMethod || ""
       };
       ev.notes = [f.notes, f.unitsNote].filter(Boolean).join(" ");
     } else if (ev.type === "ts_setup") {
@@ -1847,10 +1755,9 @@
     return s;
   }
   function unitsShort() {
-    var u = String((state.header && state.header.crsUnits) || "").toLowerCase();
+    var u = String((state.header && state.header.crsUnits) || "us-ft").toLowerCase();
     if (u === "m") return "m";
-    if (u === "us-ft" || u === "intl-ft" || u === "ft" || u === "usft" || u === "ift") return "ft";
-    return "";
+    return "ft";
   }
   function lookupElev(pointNo) {
     var key = pointKey(pointNo).toLowerCase();
@@ -2368,11 +2275,18 @@
         if (gsum) body += "<div>" + esc(gsum) + "</div>";
       }
       if (ev.notes) body += "<div>" + esc(ev.notes) + "</div>";
-      if (ev.type === "ts_setup" && ev.check) {
-        var c = ev.check;
-        body += "<div>BS check residual (obs \u2212 rec): HD " + esc(fmtRes(residual(c.hdObs, c.hdRec))) +
-          ", dZ " + esc(fmtRes(residual(c.elevObs, c.elevRec))) + ", dN " + esc(fmtRes(residual(c.nObs, c.nRec))) +
-          ", dE " + esc(fmtRes(residual(c.eObs, c.eRec))) + "</div>";
+      if (ev.type === "ts_setup") {
+        var tsum = tsSummary(ev);
+        if (tsum) body += "<div>" + esc(tsum) + "</div>";
+        else if (ev.check) {
+          var c = ev.check;
+          var bits = [];
+          if (c.hdObs || c.hdRec) bits.push("HD " + fmtRes(residual(c.hdObs, c.hdRec)));
+          if (c.elevObs || c.elevRec) bits.push("dZ " + fmtRes(residual(c.elevObs, c.elevRec)));
+          if (c.nObs || c.nRec) bits.push("dN " + fmtRes(residual(c.nObs, c.nRec)));
+          if (c.eObs || c.eRec) bits.push("dE " + fmtRes(residual(c.eObs, c.eRec)));
+          if (bits.length) body += "<div>Previously saved check: " + esc(bits.join(", ")) + "</div>";
+        }
       }
       if (ev.warnOutside || ev.warnDuplicate) body += '<div class="muted">Point-number warning on this entry.</div>';
       if (ev.importedFrom) body += '<div class="muted">Imported from ' + esc(ev.importedFrom) + "</div>";
@@ -2389,27 +2303,11 @@
     }
     openPrint("Field Notes", body);
   }
-  function selectedHospitalLabel() {
-    var j = state.jsa; if (!j) return "";
-    if (j.hospitalId === "other") return j.hospitalOther || "Other";
-    var list = (profile && profile.hospitals) || [];
-    var h = list.filter(function (x) { return x.id === j.hospitalId; })[0];
-    return h ? h.label : "";
-  }
-  function printSafety() {
-    if (!state.jsa) { toast("No safety sheet has been saved yet"); showView("menu"); openJsa(); return; }
-    openJsa();
-    setTimeout(function () {
-      var node = document.querySelector(".jsa-form");
-      var html = node ? node.outerHTML : "<p>Could not build the safety form.</p>";
-      var css = ".jsa-form{border:2px solid #111} canvas{border:1px solid #ccc;width:180px;height:64px} button,.btn{display:none!important}";
-      openPrint("Safety Report", '<div class="hdr">' + printLogoHtml() + "<div><h1>Safety Report</h1></div></div>" + html, css);
-    }, 200);
-  }
   function printControl() {
     var rows = [];
     (state.events || []).forEach(function (ev) {
       if (ev.type === "ts_setup" && ev.check && ev.check.pt) rows.push({ ev: ev, ch: ev.check, kind: "TS backsight check" });
+      if (ev.type === "ts_setup" && ev.fields && ev.fields.residuals) rows.push({ ev: ev, ch: ev.fields.residuals, kind: "TS residuals", residuals: ev.fields.residuals });
       if (ev.type === "bs_check" || ev.type === "rover_check") {
         var ch = ev.check || ev.fields || {};
         rows.push({ ev: ev, ch: ch, kind: typeLabel(ev.type) });
@@ -2529,9 +2427,12 @@
   function csvEscape(v) { return /[",\n]/.test(String(v == null ? "" : v)) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v == null ? "" : v); }
   function toCsv(rows) { return rows.map(function (r) { return r.map(csvEscape).join(","); }).join("\n"); }
   function entriesCsv() {
-    var rows = [["time","type","point","notes","status","importedFrom","warnOutside","warnDuplicate"]];
+    var rows = [["time","type","point","notes","status","details","importedFrom","warnOutside","warnDuplicate"]];
     (state.events || []).forEach(function (ev) {
-      rows.push([ev.time || "", ev.type || "", eventPoint(ev), ev.notes || "", ev.status || "", ev.importedFrom || "", ev.warnOutside ? "Y" : "", ev.warnDuplicate ? "Y" : ""]);
+      var details = "";
+      if (ev.type === "gnss_base") details = gnssSummary(ev);
+      else if (ev.type === "ts_setup") details = tsSummary(ev);
+      rows.push([ev.time || "", ev.type || "", eventPoint(ev), ev.notes || "", ev.status || "", details, ev.importedFrom || "", ev.warnOutside ? "Y" : "", ev.warnDuplicate ? "Y" : ""]);
     });
     return toCsv(rows);
   }
@@ -2561,7 +2462,7 @@
     if (e === null || n === null) return null;
     if (!state.header.crsZone) return null;
     try {
-      var ll = FNCrs.gridToLonLat(e, n, state.header.crsZone, state.header.crsUnits);
+      var ll = FNCrs.gridToLonLat(e, n, state.header.crsZone, state.header.crsUnits || "us-ft");
       if (ll && ll.lon != null) return { lon: ll.lon, lat: ll.lat, source: "grid" };
     } catch (err) {}
     return null;
@@ -2572,7 +2473,7 @@
     var e = num(p.e), n = num(p.n);
     if (e === null || n === null || !state.header.crsZone) return null;
     try {
-      var ll = FNCrs.gridToLonLat(e, n, state.header.crsZone, state.header.crsUnits);
+      var ll = FNCrs.gridToLonLat(e, n, state.header.crsZone, state.header.crsUnits || "us-ft");
       if (ll && ll.lon != null) return { lon: ll.lon, lat: ll.lat, source: "grid" };
     } catch (err) {}
     return null;
@@ -2777,7 +2678,6 @@
   var PKG_PREF = "package-toggles-v1:";
   var PKG_ITEMS = [
     { id: "fieldNotes", label: "Field Notes", folder: "01_Field_Notes", hint: "Print-ready HTML (Print → Save as PDF)" },
-    { id: "safety", label: "Safety Sheet / JSA", folder: "02_Safety", hint: "Saved JSA and crew sign-in" },
     { id: "level", label: "Level Notes", folder: "03_Level_Notes", hint: "Print-ready HTML and CSV" },
     { id: "manholes", label: "Manhole Dips", folder: "04_Manhole_Dips", hint: "Sheet layout and sketches" },
     { id: "daily", label: "Daily Field Report", folder: "05_Daily_Report", hint: "Hours, work report, sign-off" },
@@ -2787,7 +2687,6 @@
   ];
   function pkgHasData(id) {
     if (id === "fieldNotes") return (state.events || []).length > 0 || !!(state.header.jobNo || state.header.projectTitle || state.header.weather || state.header.crew || state.header.remarks);
-    if (id === "safety") return !!state.jsa;
     if (id === "level") return !!(state.level && (state.level.rows || []).some(function (r) { return r.sta || r.bs || r.fs || r.knownElev; }));
     if (id === "manholes") return !!(state.manholes && (state.manholes.holes || []).some(function (h) {
       var sk = h.sketch || {};
@@ -2862,9 +2761,6 @@
       addText(folder("fieldNotes") + "field-notes.html", standalone("Field Notes", '<div class="hdr">' + printLogoHtml() + "<div><h1>Field Notes</h1></div></div>" + headerMetaHtml() + (evs.length ? evs.map(function (ev) {
         return "<div><strong>" + esc(typeLabel(ev.type)) + "</strong> " + esc(ev.time || "") + (eventPoint(ev) ? " · pt " + esc(eventPoint(ev)) : "") + (ev.type === "gnss_base" && gnssSummary(ev) ? "<div>" + esc(gnssSummary(ev)) + "</div>" : "") + (ev.notes ? "<div>" + esc(ev.notes) + "</div>" : "") + "</div>";
       }).join("") : "<p>No entries were logged this day.</p>")), "html");
-    }
-    if (selected.safety && state.jsa) {
-      addText(folder("safety") + "safety.html", standalone("Safety Report", "<h1>Safety Report</h1>" + headerMetaHtml() + "<p>Hospital: " + esc(selectedHospitalLabel()) + "</p><p>Task: " + esc(state.jsa.task || "") + "</p><p>Location: " + esc(state.jsa.location || "") + "</p><p>Open Safety report in the app and use Print to include signatures in a PDF.</p>"), "html");
     }
     if (selected.level) {
       var calc = levelCompute();
@@ -3204,8 +3100,7 @@
     { id: "photos", label: "Photos + photo log", path: "Photos/" },
     { id: "level", label: "Level notes", path: "LevelNotes/" },
     { id: "manholes", label: "Manhole dips", path: "ManholeDips/" },
-    { id: "opus", label: "OPUS summaries", path: "OPUS/" },
-    { id: "safety", label: "Safety / JSA", path: "Safety/JSA.pdf" }
+    { id: "opus", label: "OPUS summaries", path: "OPUS/" }
   ];
   function finishHas(id) {
     if (id === "fieldBook") return (state.events || []).length > 0 || !!(state.header.jobNo || state.header.projectTitle || state.header.weather);
@@ -3217,7 +3112,6 @@
     if (id === "level") return pkgHasData("level");
     if (id === "manholes") return pkgHasData("manholes");
     if (id === "opus") return (state.opusReports || []).length > 0;
-    if (id === "safety") return !!state.jsa;
     return false;
   }
   function openFinishDay() {
@@ -3290,6 +3184,7 @@
       var line = typeLabel(ev.type) + "  " + (ev.time || "") + (eventPoint(ev) ? "  Pt " + eventPoint(ev) : "") + (ev.status ? "  " + ev.status : "");
       doc.para(line, true);
       if (ev.type === "gnss_base" && gnssSummary(ev)) doc.para(gnssSummary(ev));
+      if (ev.type === "ts_setup" && tsSummary(ev)) doc.para(tsSummary(ev));
       if (ev.notes) doc.para(ev.notes);
       if (ev.filename) doc.para("File " + ev.filename);
     });
@@ -3391,9 +3286,6 @@
     if (selected.manholes) {
       chain = chain.then(function () { return pdfManholes().then(function (blob) { add("ManholeDips/ManholeDips.pdf", blob); }); });
     }
-    if (selected.safety && state.jsa) {
-      chain = chain.then(function () { return pdfSafety().then(function (blob) { add("Safety/JSA.pdf", blob); }); });
-    }
     chain.then(function () {
       var manifest = "Field Notes package\n" + finishDayName() + "\n" +
         (state.header.date || todayISO()) + "\n" +
@@ -3429,26 +3321,6 @@
     });
   }
 
-  function pdfSafety() {
-    var doc = new FNPdf.Doc("Job Safety Analysis");
-    var j = state.jsa || {};
-    var labels = (profile && profile.jsa) || {};
-    doc.heading(labels.title || "JOB SAFETY ANALYSIS");
-    doc.para("Date " + (state.header.date || "") + "   Job " + (state.header.jobNo || "") + "   " + (state.header.projectTitle || state.header.jobName || ""));
-    doc.para("Task: " + (j.task || "") + "    Location: " + (j.location || ""));
-    doc.para("Hospital: " + selectedHospitalLabel());
-    if (j.comments) doc.para("Comments: " + j.comments);
-    var chain = Promise.resolve();
-    (j.signers || []).forEach(function (s) {
-      chain = chain.then(function () {
-        doc.para((s.name || "Signer") + (s.ts ? "  " + s.ts : ""), true);
-        if (s.sigDataUrl) {
-          return dataUrlToJpegU8(s.sigDataUrl).then(function (u8) { if (u8) doc.imageJpeg(u8, 200); });
-        }
-      });
-    });
-    return chain.then(function () { return doc.blob(); });
-  }
   function pdfManholes() {
     var doc = new FNPdf.Doc("Manhole Dips");
     var sheet = ensureManholes();
@@ -3470,8 +3342,6 @@
     document.querySelectorAll("[data-view]").forEach(function (btn) {
       btn.addEventListener("click", function () { showView(btn.getAttribute("data-view")); });
     });
-    if ($("tileSafety")) $("tileSafety").addEventListener("click", openJsa);
-    if ($("btnSafety")) $("btnSafety").addEventListener("click", openJsa);
     if ($("btnSettings")) $("btnSettings").addEventListener("click", openSettings);
     if ($("btnNew")) $("btnNew").addEventListener("click", newDay);
     if ($("btnGnss")) $("btnGnss").addEventListener("click", function () { openGnss(); });
@@ -3480,7 +3350,6 @@
     if ($("btnSketch")) $("btnSketch").addEventListener("click", function () { openSketch(); });
     if ($("ovClose")) $("ovClose").addEventListener("click", closeOverlay);
     if ($("btnEod")) $("btnEod").addEventListener("click", printFieldNotes);
-    if ($("btnSafetyReport")) $("btnSafetyReport").addEventListener("click", printSafety);
     if ($("btnControlReport")) $("btnControlReport").addEventListener("click", printControl);
     if ($("btnDailyReport")) $("btnDailyReport").addEventListener("click", printDaily);
     if ($("btnMhReport")) $("btnMhReport").addEventListener("click", printManholes);
@@ -3494,10 +3363,6 @@
     if ($("btnEarth")) $("btnEarth").addEventListener("click", exportEarth);
     if ($("btnPackage")) $("btnPackage").addEventListener("click", openFinishDay);
     if ($("btnFinishDay")) $("btnFinishDay").addEventListener("click", openFinishDay);
-    if ($("currentPoint")) {
-      $("currentPoint").addEventListener("change", function () { setCurrentPoint($("currentPoint").value); });
-      $("currentPoint").addEventListener("blur", function () { setCurrentPoint($("currentPoint").value); });
-    }
     if ($("btnCsv")) $("btnCsv").addEventListener("click", downloadCsv);
     if ($("btnImportControl")) $("btnImportControl").addEventListener("click", function () { $("controlInput").click(); });
     if ($("btnImportPoints")) $("btnImportPoints").addEventListener("click", function () { $("pointsInput").click(); });

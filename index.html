@@ -28,7 +28,6 @@
     <div class="menu-grid">
       <button type="button" class="tile" id="tileField" data-view="field">Field Notes<span class="sub">Setups, photos, today’s log</span></button>
       <button type="button" class="tile" id="tileLevel" data-view="level">Level Notes<span class="sub">BS / HI / FS and closure</span></button>
-      <button type="button" class="tile tile-safety" id="tileSafety">Safety Sheet<span class="sub">JSA and crew sign-in</span></button>
       <button type="button" class="tile" id="tileDaily" data-view="daily">Daily Report<span class="sub">Hours, work, sign-off</span></button>
       <button type="button" class="tile" id="tileControl" data-view="control">Control<span class="sub">Import list, mark used, Google Earth</span></button>
       <button type="button" class="tile" id="tileTools" data-view="tools">Tools<span class="sub">Calculators and OPUS report</span></button>
@@ -83,14 +82,6 @@
             <input id="crsEpochConfirmed" type="checkbox">
             <span style="text-transform:none;letter-spacing:0;font-size:13px;font-weight:600;color:var(--ink)">I confirm this epoch</span>
           </label>
-          <label class="fld"><span>Grid units</span>
-            <select id="crsUnits">
-              <option value="">Select units…</option>
-              <option value="us-ft">US survey feet</option>
-              <option value="intl-ft">International feet</option>
-              <option value="m">Metres</option>
-            </select>
-          </label>
           <label class="fld"><span>Vertical datum</span>
             <input id="crsVertical" type="text" list="vertList" placeholder="e.g. NAVD88">
             <datalist id="vertList">
@@ -109,7 +100,11 @@
               <option value="CGVD2013">
             </datalist>
           </label>
-          <label class="fld"><span>Project / combined scale factor (optional)</span>
+          <label class="fld span-row" style="flex-direction:row;align-items:center;gap:8px;margin-top:4px">
+            <input id="crsScaleOne" type="checkbox">
+            <span style="text-transform:none;letter-spacing:0;font-size:13px;font-weight:600;color:var(--ink)">Scale factor 1 (grid = ground)</span>
+          </label>
+          <label class="fld" id="crsScaleFactorWrap"><span>Project / combined scale factor (optional)</span>
             <input id="crsScaleFactor" type="number" step="any" placeholder="Optional">
           </label>
         </div>
@@ -154,17 +149,10 @@
       </div>
     </div>
 
-    <div class="current-pt" id="currentPtBar">
-      <label class="fld" style="flex:1;margin:0"><span>Current point</span>
-        <input id="currentPoint" type="text" list="ctrlList" autocomplete="off" placeholder="Photos and new entries use this">
-      </label>
-    </div>
-
     <div class="hero-actions">
-      <button type="button" class="hero safety" id="btnSafety">Start of day — Safety / JSA<span class="sub">Job safety analysis and crew sign-in</span></button>
       <div class="hero-row">
-        <button type="button" class="hero secondary" id="btnGnss">Base setup (GNSS)<span class="sub">Height, antenna, session</span></button>
-        <button type="button" class="hero secondary" id="btnTs">Total station setup<span class="sub">HI, HT, backsight check</span></button>
+        <button type="button" class="hero secondary" id="btnGnss">Base setup (GNSS)<span class="sub">Height, antenna / receiver, session</span></button>
+        <button type="button" class="hero secondary" id="btnTs">Total station setup<span class="sub">HI, HR, residuals</span></button>
       </div>
       <div class="hero-row">
         <button type="button" class="hero photo" id="btnPhoto">Photo<span class="sub">Capture, watermark, name by point</span></button>
@@ -249,7 +237,6 @@
       <p class="hint">Print opens a page you can save as PDF. Then use Export package to pick what goes in the ZIP.</p>
       <div class="actions" style="margin-top:0">
         <button type="button" class="btn btn-primary" id="btnEod">Field notes</button>
-        <button type="button" class="btn" id="btnSafetyReport">Safety report</button>
         <button type="button" class="btn" id="btnDailyReport">Daily field report</button>
         <button type="button" class="btn" id="btnMhReport">Manhole dips</button>
       </div>

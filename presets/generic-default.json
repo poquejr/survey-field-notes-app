@@ -7,69 +7,6 @@
     "note": "Codes are supplied by the company. The core app ships none.",
     "codes": []
   },
-  "jsa": {
-    "title": "JOB SAFETY ANALYSIS",
-    "signOffTitle": "CREW SIGN-IN",
-    "printNameLabel": "PRINT NAME",
-    "signLabel": "SIGN",
-    "hospitalTitle": "NEAREST HOSPITAL / EMERGENCY",
-    "commentsLabel": "COMMENTS:",
-    "infoColumn": "ADDITIONAL INFO",
-    "mitigateColumn": "MITIGATING FACTORS",
-    "ppeTitle": "PPE REQUIRED",
-    "otherHospitalLabel": "Other",
-    "hazardSections": [
-      {
-        "id": "environmental",
-        "title": "ENVIRONMENTAL",
-        "items": [
-          "VEHICLE / ROADWAY TRAFFIC",
-          "PEDESTRIAN TRAFFIC",
-          "WEATHER / HEAT / COLD",
-          "WILDLIFE / INSECTS",
-          "UNEVEN TERRAIN / SLOPES",
-          "VEGETATION",
-          "NIGHT / LOW LIGHT"
-        ],
-        "customRows": 2
-      },
-      {
-        "id": "construction",
-        "title": "CONSTRUCTION / SITE",
-        "items": [
-          "HEAVY EQUIPMENT",
-          "EXCAVATIONS / TRENCHES",
-          "OVERHEAD WORK / FALLING OBJECTS",
-          "PINCH / PUNCTURE",
-          "CHEMICALS / FUEL"
-        ],
-        "customRows": 2
-      },
-      {
-        "id": "utility",
-        "title": "UTILITIES",
-        "items": [
-          "ELECTRIC (OVERHEAD / UNDERGROUND)",
-          "GAS",
-          "WATER / SEWER / STORM"
-        ],
-        "customRows": 3
-      }
-    ],
-    "ppe": {
-      "items": [
-        "HIGH-VISIBILITY VEST",
-        "GLOVES",
-        "HARD HAT",
-        "SAFETY-TOE FOOTWEAR",
-        "SAFETY GLASSES",
-        "HEARING PROTECTION",
-        "FALL PROTECTION"
-      ],
-      "customCount": 4
-    }
-  },
-  "hospitals": [],
   "emergencyContacts": [
     {
       "label": "Emergency services",

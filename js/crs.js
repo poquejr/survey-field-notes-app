@@ -147,7 +147,7 @@
 
   function isComplete(crs) {
     if (!crs) return false;
-    return !!(crs.crsZone && crs.crsEpoch && crs.crsEpochConfirmed && crs.crsUnits && crs.crsVertical);
+    return !!(crs.crsZone && crs.crsEpoch && crs.crsEpochConfirmed && crs.crsVertical);
   }
 
   function missingList(crs) {
@@ -156,7 +156,6 @@
     if (!crs.crsZone) miss.push("projection / zone");
     if (!crs.crsEpoch) miss.push("epoch");
     if (!crs.crsEpochConfirmed) miss.push("epoch confirmation");
-    if (!crs.crsUnits) miss.push("grid units");
     if (!crs.crsVertical) miss.push("vertical datum");
     return miss;
   }
@@ -169,12 +168,14 @@
       parts.push(opt ? opt.label : crs.crsZone);
     }
     if (crs.crsEpoch) parts.push("epoch " + crs.crsEpoch + (crs.crsEpochConfirmed ? " (confirmed)" : " (unconfirmed)"));
-    if (crs.crsUnits === "us-ft") parts.push("US survey ft");
-    else if (crs.crsUnits === "intl-ft") parts.push("international ft");
-    else if (crs.crsUnits === "m") parts.push("metres");
+    var units = crs.crsUnits || "us-ft";
+    if (units === "intl-ft") parts.push("international ft");
+    else if (units === "m") parts.push("metres");
+    else parts.push("US survey ft");
     if (crs.crsVertical) parts.push(crs.crsVertical);
     if (crs.crsGeoid) parts.push(crs.crsGeoid);
-    if (crs.crsScaleFactor) parts.push("CSF " + crs.crsScaleFactor);
+    if (crs.crsScaleOne) parts.push("scale factor 1 (grid = ground)");
+    else if (crs.crsScaleFactor) parts.push("CSF " + crs.crsScaleFactor);
     return parts.length ? parts.join(", ") : "Coordinate system not set";
   }
 
