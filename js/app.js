@@ -2288,6 +2288,8 @@
           if (bits.length) body += "<div>Previously saved check: " + esc(bits.join(", ")) + "</div>";
         }
       }
+      if (ev.filename) body += "<div>File " + esc(ev.filename) + "</div>";
+      if (ev.type === "sketch") body += '<div class="muted">Legend: Control point; Monument found; Monument set; Benchmark; Iron pipe / rebar; Nail / tag; Existing pole; New pole; Tree; Utility box / vault; Miscellaneous; Line and Circle (solid or dashed). The saved PNG includes this legend.</div>';
       if (ev.warnOutside || ev.warnDuplicate) body += '<div class="muted">Point-number warning on this entry.</div>';
       if (ev.importedFrom) body += '<div class="muted">Imported from ' + esc(ev.importedFrom) + "</div>";
       body += "</div>";
@@ -2613,67 +2615,505 @@
       upsertEvent(ev); closeOverlay();
     };
   }
+  var SKETCH_SYMBOLS = [
+    { id: "control", label: "Control point" },
+    { id: "monFound", label: "Monument found" },
+    { id: "monSet", label: "Monument set" },
+    { id: "benchmark", label: "Benchmark" },
+    { id: "ip", label: "Iron pipe / rebar" },
+    { id: "nail", label: "Nail / tag" },
+    { id: "poleExist", label: "Existing pole" },
+    { id: "poleNew", label: "New pole" },
+    { id: "tree", label: "Tree" },
+    { id: "vault", label: "Utility box / vault" },
+    { id: "misc", label: "Miscellaneous" }
+  ];
+  function sketchSetStroke(ctx, dashed, width) {
+    ctx.strokeStyle = "#111";
+    ctx.fillStyle = "#111";
+    ctx.lineWidth = width || 2.4;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.setLineDash(dashed ? [9, 7] : []);
+  }
+  function drawSketchSymbol(ctx, kind, x, y, s, label) {
+    s = s || 16;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.strokeStyle = "#111";
+    ctx.fillStyle = "#111";
+    ctx.lineWidth = Math.max(1.6, s * 0.14);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.setLineDash([]);
+    function tri(fill) {
+      ctx.beginPath();
+      ctx.moveTo(0, -s);
+      ctx.lineTo(s * 0.9, s * 0.7);
+      ctx.lineTo(-s * 0.9, s * 0.7);
+      ctx.closePath();
+      if (fill) ctx.fill();
+      else ctx.stroke();
+    }
+    function circ(fill, r) {
+      ctx.beginPath();
+      ctx.arc(0, 0, r || s, 0, Math.PI * 2);
+      if (fill) ctx.fill();
+      else ctx.stroke();
+    }
+    function dot(r) {
+      ctx.beginPath();
+      ctx.arc(0, 0, r || s * 0.22, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (kind === "control") { tri(false); dot(s * 0.2); }
+    else if (kind === "monFound") { circ(false, s); dot(s * 0.22); }
+    else if (kind === "monSet") { circ(true, s * 0.85); }
+    else if (kind === "benchmark") {
+      tri(false);
+      ctx.beginPath();
+      ctx.moveTo(0, -s * 0.55); ctx.lineTo(0, s * 0.45);
+      ctx.moveTo(-s * 0.5, 0.1 * s); ctx.lineTo(s * 0.5, 0.1 * s);
+      ctx.stroke();
+    } else if (kind === "ip") {
+      var q = s * 0.75;
+      ctx.strokeRect(-q, -q, q * 2, q * 2);
+      ctx.beginPath();
+      ctx.moveTo(-q, 0); ctx.lineTo(q, 0);
+      ctx.moveTo(0, -q); ctx.lineTo(0, q);
+      ctx.stroke();
+    } else if (kind === "nail") {
+      ctx.beginPath();
+      ctx.moveTo(-s, 0); ctx.lineTo(s, 0);
+      ctx.moveTo(0, -s); ctx.lineTo(0, s);
+      ctx.moveTo(-s * 0.7, -s * 0.7); ctx.lineTo(s * 0.7, s * 0.7);
+      ctx.moveTo(s * 0.7, -s * 0.7); ctx.lineTo(-s * 0.7, s * 0.7);
+      ctx.stroke();
+    } else if (kind === "poleExist" || kind === "poleNew") {
+      ctx.beginPath();
+      ctx.moveTo(0, 0); ctx.lineTo(0, -s * 1.55);
+      ctx.stroke();
+      circ(kind === "poleExist", s * 0.7);
+    } else if (kind === "tree") {
+      circ(false, s * 0.85);
+      for (var i = 0; i < 7; i++) {
+        var a = (i / 7) * Math.PI * 2 - Math.PI / 2;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * s * 0.4, Math.sin(a) * s * 0.4);
+        ctx.lineTo(Math.cos(a) * s * 1.05, Math.sin(a) * s * 1.05);
+        ctx.stroke();
+      }
+      ctx.beginPath();
+      ctx.moveTo(0, s * 0.85); ctx.lineTo(0, s * 1.45);
+      ctx.stroke();
+    } else if (kind === "vault") {
+      ctx.strokeRect(-s * 0.95, -s * 0.7, s * 1.9, s * 1.4);
+      ctx.strokeRect(-s * 0.65, -s * 0.4, s * 1.3, s * 0.8);
+    } else {
+      /* misc: 5-point star */
+      ctx.beginPath();
+      for (var k = 0; k < 5; k++) {
+        var a1 = -Math.PI / 2 + k * Math.PI * 2 / 5;
+        var a2 = a1 + Math.PI / 5;
+        var cmd = k === 0 ? "moveTo" : "lineTo";
+        ctx[cmd](Math.cos(a1) * s, Math.sin(a1) * s);
+        ctx.lineTo(Math.cos(a2) * s * 0.4, Math.sin(a2) * s * 0.4);
+      }
+      ctx.closePath();
+      ctx.stroke();
+    }
+    if (label) {
+      ctx.setLineDash([]);
+      ctx.font = "bold " + Math.max(11, Math.round(s * 0.9)) + "px sans-serif";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "#111";
+      ctx.fillText(label, s + 6, 0);
+    }
+    ctx.restore();
+  }
+  function drawSketchObject(ctx, obj) {
+    if (!obj) return;
+    if (obj.type === "stroke" || obj.type === "erase") {
+      var pts = obj.points || [];
+      if (pts.length < 1) return;
+      ctx.save();
+      if (obj.type === "erase") {
+        ctx.globalCompositeOperation = "destination-out";
+        ctx.strokeStyle = "rgba(0,0,0,1)";
+        ctx.lineWidth = obj.width || 16;
+      } else {
+        sketchSetStroke(ctx, false, obj.width || 2.4);
+      }
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (var i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+      if (pts.length === 1) ctx.lineTo(pts[0].x + 0.01, pts[0].y);
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
+    if (obj.type === "line") {
+      sketchSetStroke(ctx, !!obj.dashed, 2.6);
+      ctx.beginPath();
+      ctx.moveTo(obj.x1, obj.y1);
+      ctx.lineTo(obj.x2, obj.y2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      return;
+    }
+    if (obj.type === "circle") {
+      var r = Math.max(0, obj.r || 0);
+      sketchSetStroke(ctx, !!obj.dashed, 2.6);
+      ctx.beginPath();
+      ctx.arc(obj.x, obj.y, r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      return;
+    }
+    if (obj.type === "text") {
+      ctx.save();
+      ctx.setLineDash([]);
+      ctx.fillStyle = "#111";
+      ctx.font = "bold 22px sans-serif";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
+      ctx.fillText(obj.text || "", obj.x, obj.y);
+      ctx.restore();
+      return;
+    }
+    if (obj.type === "symbol") {
+      drawSketchSymbol(ctx, obj.kind, obj.x, obj.y, obj.size || 18, obj.label || "");
+    }
+  }
+  function drawSketchLegend(ctx, x, y, w, h) {
+    ctx.save();
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = "#111";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(x, y + 0.5);
+    ctx.lineTo(x + w, y + 0.5);
+    ctx.stroke();
+    ctx.fillStyle = "#111";
+    ctx.font = "bold 12px sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    ctx.fillText("Legend", x + 8, y + 6);
+    var items = SKETCH_SYMBOLS.slice();
+    var styles = [
+      { kind: "lineSolid", label: "Line (solid)" },
+      { kind: "lineDash", label: "Line (dashed)" },
+      { kind: "circSolid", label: "Circle (solid)" },
+      { kind: "circDash", label: "Circle (dashed)" }
+    ];
+    var all = items.concat(styles);
+    var cols = 5;
+    var cellW = (w - 16) / cols;
+    var top = y + 24;
+    var rowH = (h - 32) / Math.ceil(all.length / cols);
+    all.forEach(function (it, i) {
+      var c = i % cols, r = Math.floor(i / cols);
+      var cx = x + 8 + c * cellW + 12;
+      var cy = top + r * rowH + 10;
+      if (it.kind === "lineSolid" || it.kind === "lineDash") {
+        sketchSetStroke(ctx, it.kind === "lineDash", 2);
+        ctx.beginPath();
+        ctx.moveTo(cx - 10, cy);
+        ctx.lineTo(cx + 10, cy);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      } else if (it.kind === "circSolid" || it.kind === "circDash") {
+        sketchSetStroke(ctx, it.kind === "circDash", 2);
+        ctx.beginPath();
+        ctx.arc(cx, cy, 7, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      } else {
+        drawSketchSymbol(ctx, it.id, cx, cy, 8, "");
+      }
+      ctx.fillStyle = "#111";
+      ctx.font = "10px sans-serif";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.fillText(it.label, cx + 16, cy);
+    });
+    ctx.restore();
+  }
+  function renderSketchIcon(kind, size) {
+    var c = document.createElement("canvas");
+    c.width = size; c.height = size;
+    var g = c.getContext("2d");
+    g.fillStyle = "#fff";
+    g.fillRect(0, 0, size, size);
+    drawSketchSymbol(g, kind, size / 2, size / 2, size * 0.32, "");
+    return c;
+  }
   function openSketch(existing) {
     var ev = existing || { id: uid(), type: "sketch", time: nowTime(), ts: new Date().toISOString(), fields: {} };
+    ev.fields = ev.fields || {};
     openOverlay("Sketch", existing ? "Edit" : "New");
+    var toolBtns = [
+      ["freehand", "Freehand"],
+      ["line", "Line"],
+      ["circle", "Circle"],
+      ["text", "Text"],
+      ["eraser", "Eraser"]
+    ];
+    var toolsHtml = '<div class="sk-tools" id="skTools">' +
+      toolBtns.map(function (t) {
+        return '<button type="button" class="btn sk-tool" data-sktool="' + t[0] + '">' + t[1] + "</button>";
+      }).join("") +
+      '<button type="button" class="btn sk-tool" id="skUndo">Undo</button>' +
+      '<button type="button" class="btn sk-tool" id="skClear">Clear</button>' +
+      "</div>";
+    toolsHtml += '<div class="sk-style" id="skStyle">' +
+      '<button type="button" class="btn sk-tool" data-skstyle="solid">Solid</button>' +
+      '<button type="button" class="btn sk-tool" data-skstyle="dashed">Dashed</button>' +
+      '<span class="hint" style="margin:0">Applies to Line and Circle</span></div>';
+    toolsHtml += '<div class="sk-syms" id="skSyms">';
+    SKETCH_SYMBOLS.forEach(function (s) {
+      toolsHtml += '<button type="button" class="btn sk-sym" data-sksym="' + s.id + '" title="' + esc(s.label) + '">' +
+        '<span class="sk-ico" data-skico="' + s.id + '"></span><span class="sk-lab">' + esc(s.label) + "</span></button>";
+    });
+    toolsHtml += "</div>";
     $("ovBody").innerHTML = '<div class="grid g2">' +
       fieldHtml("skTime", "Time", ev.time, { type: "time" }) +
       fieldHtml("skPt", "Point no.", ev.pointNo || "", { ph: "Optional — used in the file name" }) +
       fieldHtml("skNotes", "Notes", ev.notes, { span: true, type: "textarea" }) +
-      '</div><canvas id="sketchPad" width="800" height="560"></canvas>' +
-      '<div class="actions"><button type="button" class="btn btn-sm" id="skClear">Clear drawing</button></div>' +
-      '<p class="hint">Draw with a finger or stylus. The sketch is stored on this device as a PNG.</p>';
+      "</div>" + toolsHtml +
+      '<div id="skPrompt" class="sk-prompt hidden">' +
+      '<label class="fld" style="flex:1;margin:0"><span id="skPromptLab">Point # (optional)</span>' +
+      '<input id="skPromptIn" type="text" placeholder="Optional label" autocomplete="off"></label>' +
+      '<button type="button" class="btn" id="skPromptOk">Add</button>' +
+      '<button type="button" class="btn" id="skPromptSkip">Skip</button></div>' +
+      '<canvas id="sketchPad" width="800" height="560"></canvas>' +
+      '<p class="hint">Tap or drag with a finger or mouse. Symbols get an optional point number. A legend is added when you save or export.</p>';
     $("ovFoot").innerHTML = '<button type="button" class="btn btn-primary" id="skSave">Save sketch</button>';
     var canvas = $("sketchPad");
     var ctx = canvas.getContext("2d");
-    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.strokeStyle = "#111"; ctx.lineWidth = 2; ctx.lineCap = "round"; ctx.lineJoin = "round";
-    var sketchState = { drawing: false, last: null };
-    function pos(e) {
-      var r = canvas.getBoundingClientRect();
-      var t = e.touches ? e.touches[0] : e;
-      return { x: (t.clientX - r.left) * (canvas.width / r.width), y: (t.clientY - r.top) * (canvas.height / r.height) };
+    var objects = Array.isArray(ev.fields.sketchObjects) ? ev.fields.sketchObjects.slice() : [];
+    var baseImage = null;
+    var tool = "freehand";
+    var dashed = false;
+    var symbolKind = "";
+    var drawing = false;
+    var current = null;
+    var pending = null;
+    document.querySelectorAll("[data-skico]").forEach(function (el) {
+      el.appendChild(renderSketchIcon(el.getAttribute("data-skico"), 64));
+    });
+    function setTool(next, sym) {
+      tool = next;
+      symbolKind = next === "symbol" ? (sym || symbolKind) : "";
+      document.querySelectorAll("[data-sktool]").forEach(function (b) {
+        b.classList.toggle("on", b.getAttribute("data-sktool") === tool);
+      });
+      document.querySelectorAll("[data-sksym]").forEach(function (b) {
+        b.classList.toggle("on", tool === "symbol" && b.getAttribute("data-sksym") === symbolKind);
+      });
+      canvas.style.cursor = (tool === "text" || tool === "symbol") ? "cell" : "crosshair";
     }
-    function start(e) { e.preventDefault(); sketchState.drawing = true; sketchState.last = pos(e); }
-    function move(e) {
-      if (!sketchState.drawing) return;
-      e.preventDefault();
-      var p = pos(e);
-      ctx.beginPath(); ctx.moveTo(sketchState.last.x, sketchState.last.y); ctx.lineTo(p.x, p.y); ctx.stroke();
-      sketchState.last = p;
-    }
-    function end(e) { if (e) e.preventDefault(); sketchState.drawing = false; }
-    canvas.addEventListener("pointerdown", start);
-    canvas.addEventListener("pointermove", move);
-    canvas.addEventListener("pointerup", end);
-    canvas.addEventListener("pointercancel", end);
-    if (ev.fileId) {
-      FNIdb.fileGet(ev.fileId).then(function (rec) {
-        if (!rec || !rec.blob) return;
-        var img = new Image();
-        img.onload = function () { ctx.drawImage(img, 0, 0, canvas.width, canvas.height); };
-        img.src = URL.createObjectURL(rec.blob);
+    function setDashed(on) {
+      dashed = !!on;
+      document.querySelectorAll("[data-skstyle]").forEach(function (b) {
+        b.classList.toggle("on", (b.getAttribute("data-skstyle") === "dashed") === dashed);
       });
     }
-    $("skClear").onclick = function () { ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, canvas.width, canvas.height); };
+    function redraw() {
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.globalCompositeOperation = "source-over";
+      ctx.setLineDash([]);
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      if (baseImage) ctx.drawImage(baseImage, 0, 0, canvas.width, canvas.height);
+      objects.forEach(function (o) { drawSketchObject(ctx, o); });
+      if (current) drawSketchObject(ctx, current);
+      ctx.restore();
+    }
+    function pos(e) {
+      var r = canvas.getBoundingClientRect();
+      var x = e.clientX, y = e.clientY;
+      if ((x == null || y == null) && e.touches && e.touches[0]) {
+        x = e.touches[0].clientX;
+        y = e.touches[0].clientY;
+      }
+      return { x: (x - r.left) * (canvas.width / r.width), y: (y - r.top) * (canvas.height / r.height) };
+    }
+    function hidePrompt() {
+      pending = null;
+      if ($("skPrompt")) $("skPrompt").classList.add("hidden");
+    }
+    function askLabel(obj, title, required) {
+      pending = { obj: obj, required: !!required };
+      $("skPromptLab").textContent = title;
+      $("skPromptIn").value = obj.label || obj.text || "";
+      $("skPrompt").classList.remove("hidden");
+      $("skPromptIn").focus();
+    }
+    $("skPromptOk").onclick = function () {
+      if (!pending) return;
+      var v = ($("skPromptIn").value || "").trim();
+      if (pending.required && !v) { toast("Type a label, or skip to cancel"); return; }
+      if (pending.obj.type === "text") {
+        if (!v) { objects = objects.filter(function (o) { return o !== pending.obj; }); }
+        else pending.obj.text = v;
+      } else {
+        pending.obj.label = v;
+      }
+      hidePrompt();
+      redraw();
+    };
+    $("skPromptSkip").onclick = function () {
+      if (!pending) return;
+      if (pending.required) objects = objects.filter(function (o) { return o !== pending.obj; });
+      hidePrompt();
+      redraw();
+    };
+    canvas.addEventListener("pointerdown", function (e) {
+      if (e.button != null && e.button !== 0) return;
+      if (pending) return;
+      e.preventDefault();
+      try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+      var p = pos(e);
+      drawing = true;
+      if (tool === "freehand") current = { type: "stroke", points: [p] };
+      else if (tool === "eraser") current = { type: "erase", width: 18, points: [p] };
+      else if (tool === "line") current = { type: "line", x1: p.x, y1: p.y, x2: p.x, y2: p.y, dashed: dashed };
+      else if (tool === "circle") current = { type: "circle", x: p.x, y: p.y, r: 0, dashed: dashed };
+      else if (tool === "text") {
+        drawing = false;
+        current = null;
+        var t = { type: "text", x: p.x, y: p.y, text: "" };
+        objects.push(t);
+        askLabel(t, "Text label", true);
+        return;
+      } else if (tool === "symbol" && symbolKind) {
+        drawing = false;
+        current = null;
+        var s = { type: "symbol", kind: symbolKind, x: p.x, y: p.y, size: 18, label: "" };
+        objects.push(s);
+        redraw();
+        askLabel(s, "Point # (optional)", false);
+        return;
+      }
+      redraw();
+    });
+    canvas.addEventListener("pointermove", function (e) {
+      if (!drawing || !current) return;
+      e.preventDefault();
+      var p = pos(e);
+      if (current.type === "stroke" || current.type === "erase") current.points.push(p);
+      else if (current.type === "line") { current.x2 = p.x; current.y2 = p.y; }
+      else if (current.type === "circle") {
+        var dx = p.x - current.x, dy = p.y - current.y;
+        current.r = Math.sqrt(dx * dx + dy * dy);
+      }
+      redraw();
+    });
+    function endDraw(e) {
+      if (e) e.preventDefault();
+      if (!drawing) return;
+      drawing = false;
+      if (!current) return;
+      var keep = true;
+      if (current.type === "line") {
+        var dl = Math.hypot(current.x2 - current.x1, current.y2 - current.y1);
+        if (dl < 4) keep = false;
+      } else if (current.type === "circle") {
+        if (!current.r || current.r < 3) keep = false;
+      } else if ((current.type === "stroke" || current.type === "erase") && (!current.points || current.points.length < 1)) {
+        keep = false;
+      }
+      if (keep) objects.push(current);
+      current = null;
+      redraw();
+    }
+    canvas.addEventListener("pointerup", endDraw);
+    canvas.addEventListener("pointercancel", endDraw);
+    canvas.addEventListener("pointerleave", function (e) {
+      if (drawing && (e.buttons === 0 || e.buttons == null)) endDraw(e);
+    });
+    document.querySelectorAll("[data-sktool]").forEach(function (b) {
+      b.addEventListener("click", function () { hidePrompt(); setTool(b.getAttribute("data-sktool")); });
+    });
+    document.querySelectorAll("[data-skstyle]").forEach(function (b) {
+      b.addEventListener("click", function () { setDashed(b.getAttribute("data-skstyle") === "dashed"); });
+    });
+    document.querySelectorAll("[data-sksym]").forEach(function (b) {
+      b.addEventListener("click", function () { hidePrompt(); setTool("symbol", b.getAttribute("data-sksym")); });
+    });
+    $("skUndo").onclick = function () {
+      hidePrompt();
+      if (!objects.length) { toast("Nothing to undo"); return; }
+      objects.pop();
+      redraw();
+    };
+    $("skClear").onclick = function () {
+      hidePrompt();
+      objects = [];
+      baseImage = null;
+      redraw();
+    };
+    function loadBase(blob) {
+      var img = new Image();
+      img.onload = function () { baseImage = img; redraw(); };
+      img.src = URL.createObjectURL(blob);
+    }
+    if (Array.isArray(ev.fields.sketchObjects)) {
+      objects = ev.fields.sketchObjects.slice();
+      redraw();
+    } else if (ev.fileId) {
+      FNIdb.fileGet(ev.fileId).then(function (rec) {
+        if (rec && rec.blob) loadBase(rec.blob);
+        else redraw();
+      });
+    } else {
+      redraw();
+    }
+    setTool("freehand");
+    setDashed(false);
+    function exportWithLegend() {
+      return new Promise(function (resolve) {
+        current = null;
+        redraw();
+        var legendH = 132;
+        var out = document.createElement("canvas");
+        out.width = canvas.width;
+        out.height = canvas.height + legendH;
+        var octx = out.getContext("2d");
+        octx.fillStyle = "#fff";
+        octx.fillRect(0, 0, out.width, out.height);
+        octx.drawImage(canvas, 0, 0);
+        drawSketchLegend(octx, 0, canvas.height, out.width, legendH);
+        out.toBlob(function (b) { resolve(b); }, "image/png");
+      });
+    }
     $("skSave").onclick = function () {
+      hidePrompt();
       ev.time = $("skTime").value;
       ev.pointNo = $("skPt").value;
       ev.notes = $("skNotes").value;
       ev.type = "sketch";
+      ev.fields = ev.fields || {};
+      ev.fields.sketchObjects = objects.slice();
       ev.fileId = ev.fileId || ("sketch-" + ev.id);
       ev.filename = ev.filename || ("sketch_" + (sanitize(ev.pointNo) || "page") + "_" + sanitize(state.header.jobNo || "job") + "_" + formatStamp(new Date()) + ".png");
-      canvas.toBlob(function (blob) {
+      exportWithLegend().then(function (blob) {
         if (!blob) { toast("Could not save that sketch"); return; }
-        FNIdb.filePut({ id: ev.fileId, kind: "sketch", name: ev.filename, type: "image/png", blob: blob }).then(function () {
+        return FNIdb.filePut({ id: ev.fileId, kind: "sketch", name: ev.filename, type: "image/png", blob: blob }).then(function () {
           var warn = warnIfPointIssue(ev.pointNo, ev.id);
           ev.warnOutside = warn.outside; ev.warnDuplicate = warn.duplicate;
           upsertEvent(ev); closeOverlay();
           toast("Sketch saved as " + ev.filename);
-        }).catch(function () { toast("Could not store the sketch"); });
-      }, "image/png");
+        });
+      }).catch(function () { toast("Could not store the sketch"); });
     };
   }
+
 
   var PKG_PREF = "package-toggles-v1:";
   var PKG_ITEMS = [
@@ -3098,6 +3538,7 @@
     { id: "control", label: "Control CSV", path: "Control.csv" },
     { id: "kmz", label: "Google Earth KMZ", path: "Job.kmz" },
     { id: "photos", label: "Photos + photo log", path: "Photos/" },
+    { id: "sketches", label: "Sketches", path: "Sketches/" },
     { id: "level", label: "Level notes", path: "LevelNotes/" },
     { id: "manholes", label: "Manhole dips", path: "ManholeDips/" },
     { id: "opus", label: "OPUS summaries", path: "OPUS/" }
@@ -3109,6 +3550,7 @@
     if (id === "control") return (state.controlList || []).length > 0;
     if (id === "kmz") return (state.controlList || []).some(function (p) { return pointLonLat(p); }) || (state.events || []).some(function (e) { return eventLonLat(e); }) || (state.importedPoints || []).some(function (p) { return pointLonLat(p); });
     if (id === "photos") return (state.events || []).some(function (e) { return e.type === "photo" && e.fileId; });
+    if (id === "sketches") return (state.events || []).some(function (e) { return e.type === "sketch" && e.fileId; });
     if (id === "level") return pkgHasData("level");
     if (id === "manholes") return pkgHasData("manholes");
     if (id === "opus") return (state.opusReports || []).length > 0;
@@ -3152,6 +3594,14 @@
       r.readAsArrayBuffer(blob);
     });
   }
+  function blobToDataUrl(blob) {
+    return new Promise(function (resolve) {
+      if (!blob) { resolve(""); return; }
+      var r = new FileReader();
+      r.onload = function () { resolve(String(r.result || "")); };
+      r.readAsDataURL(blob);
+    });
+  }
   function dataUrlToJpegU8(dataUrl) {
     return new Promise(function (resolve) {
       if (!dataUrl) { resolve(null); return; }
@@ -3172,6 +3622,7 @@
     });
   }
 
+  var SKETCH_LEGEND_LINE = "Legend: Control point; Monument found; Monument set; Benchmark; Iron pipe / rebar; Nail / tag; Existing pole (filled circle on a post); New pole (open circle on a post); Tree; Utility box / vault; Miscellaneous; Line and Circle (solid or dashed).";
   function pdfFieldBook() {
     var doc = new FNPdf.Doc("Field Book");
     var h = state.header || {};
@@ -3180,15 +3631,28 @@
     doc.gap(6);
     var evs = (state.events || []).slice().sort(function (a, b) { return String(eventTime(a)).localeCompare(String(eventTime(b))); });
     if (!evs.length) doc.para("No entries were logged this day.");
+    var chain = Promise.resolve();
     evs.forEach(function (ev) {
-      var line = typeLabel(ev.type) + "  " + (ev.time || "") + (eventPoint(ev) ? "  Pt " + eventPoint(ev) : "") + (ev.status ? "  " + ev.status : "");
-      doc.para(line, true);
-      if (ev.type === "gnss_base" && gnssSummary(ev)) doc.para(gnssSummary(ev));
-      if (ev.type === "ts_setup" && tsSummary(ev)) doc.para(tsSummary(ev));
-      if (ev.notes) doc.para(ev.notes);
-      if (ev.filename) doc.para("File " + ev.filename);
+      chain = chain.then(function () {
+        var line = typeLabel(ev.type) + "  " + (ev.time || "") + (eventPoint(ev) ? "  Pt " + eventPoint(ev) : "") + (ev.status ? "  " + ev.status : "");
+        doc.para(line, true);
+        if (ev.type === "gnss_base" && gnssSummary(ev)) doc.para(gnssSummary(ev));
+        if (ev.type === "ts_setup" && tsSummary(ev)) doc.para(tsSummary(ev));
+        if (ev.notes) doc.para(ev.notes);
+        if (ev.filename) doc.para("File " + ev.filename);
+        if (ev.type === "sketch") doc.para(SKETCH_LEGEND_LINE);
+        if (ev.type !== "sketch" || !ev.fileId) return;
+        return FNIdb.fileGet(ev.fileId).then(function (rec) {
+          if (!rec || !rec.blob) return;
+          return blobToDataUrl(rec.blob).then(function (url) {
+            return dataUrlToJpegU8(url).then(function (bytes) {
+              if (bytes) doc.imageJpeg(bytes, 480);
+            });
+          });
+        });
+      });
     });
-    return doc.blob();
+    return chain.then(function () { return doc.blob(); });
   }
   function pdfDaily() {
     var doc = new FNPdf.Doc("Daily Field Report");
@@ -3243,7 +3707,9 @@
     function add(path, data) { zip.file(root + path, data); files.push(path); }
     toast("Building " + finishDayName() + ".zip\u2026");
     var chain = Promise.resolve();
-    if (selected.fieldBook) add("FieldBook.pdf", pdfFieldBook());
+    if (selected.fieldBook) {
+      chain = chain.then(function () { return Promise.resolve(pdfFieldBook()); }).then(function (blob) { if (blob) add("FieldBook.pdf", blob); });
+    }
     if (selected.daily) add("DailyFieldReport.pdf", pdfDaily());
     if (selected.points) {
       var pts = (state.importedPoints || []).slice();
@@ -3279,6 +3745,17 @@
           return FNIdb.fileGet(ev.fileId).then(function (rec) {
             if (!rec || !rec.blob) return;
             add("Photos/" + (ev.filename || (eventPoint(ev) || ev.id) + ".jpg"), rec.blob);
+          });
+        });
+      });
+    }
+    if (selected.sketches) {
+      (state.events || []).forEach(function (ev) {
+        if (ev.type !== "sketch" || !ev.fileId) return;
+        chain = chain.then(function () {
+          return FNIdb.fileGet(ev.fileId).then(function (rec) {
+            if (!rec || !rec.blob) return;
+            add("Sketches/" + (ev.filename || ev.id + ".png"), rec.blob);
           });
         });
       });

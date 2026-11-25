@@ -420,3 +420,39 @@ input::placeholder { color: #8a887e; opacity: 1; }
 .resid-table th { font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); font-weight: 700; background: var(--paper-2); }
 .resid-table td input { min-height: 44px; width: 100%; }
 .resid-table tr th:first-child { width: 28%; color: var(--ink); text-transform: none; letter-spacing: 0; font-size: 14px; }
+
+.sk-tools, .sk-style, .sk-syms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+  align-items: center;
+}
+.sk-tool, .sk-sym { min-height: 44px; min-width: 44px; padding: 8px 10px; }
+.sk-tool.on, .sk-sym.on { background: var(--accent, #1d3b70); color: #fff; border-color: var(--accent, #1d3b70); }
+.sk-sym {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  flex: 1 1 64px;
+  max-width: 92px;
+  padding: 6px 4px;
+  font-size: 11px;
+  line-height: 1.15;
+  height: auto;
+}
+.sk-ico { display: block; width: 36px; height: 36px; }
+.sk-ico canvas { width: 36px; height: 36px; display: block; pointer-events: none; }
+.sk-lab { text-align: center; }
+.sk-prompt {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+  margin: 8px 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  background: var(--paper-2, #f7f4ec);
+  border-radius: 10px;
+}
