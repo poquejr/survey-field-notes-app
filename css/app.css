@@ -73,7 +73,7 @@ label.fld { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 label.fld > span { font-size: 11px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 input[type="text"], input[type="number"], input[type="date"], input[type="time"], select, textarea {
   width: 100%; background: #fff; border: 1px solid var(--line); border-radius: 7px;
-  padding: 9px 10px; min-height: 42px; outline: none;
+  padding: 10px 12px; min-height: 44px; outline: none;
 }
 textarea { min-height: 72px; resize: vertical; }
 input:focus, select:focus, textarea:focus { border-color: var(--accent-2); box-shadow: 0 0 0 3px rgba(61,85,72,.18); }
@@ -87,7 +87,7 @@ input[type="number"] { font-variant-numeric: tabular-nums; font-family: var(--mo
 .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .btn {
   border: 1px solid var(--line); background: #fff; color: var(--ink);
-  border-radius: 8px; height: 38px; padding: 0 12px; font-size: 13px; font-weight: 650;
+  border-radius: 8px; height: 44px; padding: 0 14px; font-size: 14px; font-weight: 650;
 }
 .btn:hover { background: #f6f3eb; }
 .btn-primary { background: var(--accent-2); color: #fff; border-color: var(--accent-2); }
@@ -240,7 +240,7 @@ input[type="number"] { font-variant-numeric: tabular-nums; font-family: var(--mo
 .menu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
 .tile {
   display: flex; flex-direction: column; justify-content: center;
-  min-height: 112px; padding: 14px 14px 16px;
+  min-height: 120px; padding: 14px 14px 16px;
   border-radius: 14px; border: 1px solid var(--accent);
   background: var(--accent); color: #f4f1ea;
   text-align: left; font-weight: 700; font-size: 16px; letter-spacing: .01em;
@@ -387,3 +387,30 @@ input[type="number"] { font-variant-numeric: tabular-nums; font-family: var(--mo
 #sketchPad { width: 100%; height: auto; border: 1px solid var(--line); background: #fff; touch-action: none; display: block; }
 
 input::placeholder, textarea::placeholder { color: #8a887e; opacity: 1; }
+
+.btn-link { background: none; border: 0; color: var(--muted); font-size: 13px; height: auto; padding: 8px 0; text-decoration: underline; font-weight: 600; }
+.menu-more { margin: 0 0 8px; }
+.current-pt { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; padding: 10px 12px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 12px; }
+.tools-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.tile-tool { min-height: 92px; font-size: 15px; }
+.tool-bar { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; }
+.tool-result, .opus-summary { margin-top: 12px; padding: 10px 12px; background: #faf8f2; border: 1px solid var(--rule); border-radius: 8px; font-size: 14px; }
+.tool-result .row, .opus-summary .row { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--rule); }
+.tool-result .row span:last-child, .opus-summary .row span:last-child { font-family: var(--mono); font-size: 13px; text-align: right; }
+.opus-kicker { font-weight: 750; margin-bottom: 8px; }
+.opus-flags { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
+.opus-flag { padding: 8px 10px; border-radius: 8px; font-size: 13px; background: #efece4; }
+.opus-flag.pass { background: var(--pass-bg); }
+.opus-flag.fail { background: var(--fail-bg); }
+.opus-flag .sub { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
+.ctrl-toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.ctrl-item { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 10px 12px; border: 1px solid var(--rule); border-radius: 10px; background: #fff; margin-bottom: 8px; }
+.ctrl-item .name { font-weight: 750; font-size: 16px; }
+.ctrl-item .meta { font-size: 12.5px; color: var(--muted); grid-column: 1 / -1; font-family: var(--mono); }
+.badge.used { background: var(--pass-bg); color: var(--pass); }
+.col-map { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
+.col-map-row { display: grid; grid-template-columns: minmax(0, 1fr) 140px; gap: 8px; align-items: center; }
+.col-map-row .sample { font-size: 12px; color: var(--muted); font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+#crsBody { margin-top: 10px; }
+input::placeholder { color: #8a887e; opacity: 1; }
+@media (max-width: 380px) { .tools-grid { grid-template-columns: 1fr; } }

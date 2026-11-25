@@ -12,6 +12,7 @@
   "use strict";
 
   var USFT = 1200 / 3937; /* metres per US survey foot (exact) */
+  var GRS80_GEOG = "+proj=longlat +ellps=GRS80 +no_defs";
 
   /* Lambert conformal conic 2SP, NAD83 / GRS80, false E/N in metres */
   var CA_ZONES = {
@@ -84,8 +85,64 @@
     if (!def) throw new Error("No projection for " + zoneId);
     var en = toMetersEastNorth(Number(east), Number(north), units || "m");
     /* proj4(from, to, [easting, northing]) → [lon, lat] */
-    var ll = proj4(def, "EPSG:4326", [en.e, en.n]);
+    var ll = proj4(def, GRS80_GEOG, [en.e, en.n]);
     return { lon: ll[0], lat: ll[1] };
+  }
+
+  function lonLatToGrid(lon, lat, zoneId, units) {
+    if (zoneId === "GEOGRAPHIC") {
+      return { e: Number(lon), n: Number(lat), skipped: true };
+    }
+    if (typeof proj4 !== "function") throw new Error("proj4 is not loaded");
+    var def = projDef(zoneId, "m");
+    if (!def) throw new Error("No projection for " + zoneId);
+    var en = proj4(GRS80_GEOG, def, [Number(lon), Number(lat)]);
+    var e = en[0], n = en[1];
+    if (units === "us-ft") return { e: e / USFT, n: n / USFT };
+    if (units === "intl-ft") return { e: e / 0.3048, n: n / 0.3048 };
+    return { e: e, n: n };
+  }
+
+  function dmsToDeg(d, m, s, hemi) {
+    var sign = 1;
+    var H = String(hemi || "").toUpperCase();
+    if (H === "S" || H === "W" || Number(d) < 0) sign = -1;
+    var deg = Math.abs(Number(d) || 0) + (Number(m) || 0) / 60 + (Number(s) || 0) / 3600;
+    return sign * deg;
+  }
+
+  function degToDms(deg, kind) {
+    if (deg == null || isNaN(Number(deg))) return "";
+    var x = Number(deg);
+    var hemi = kind === "lon" ? (x >= 0 ? "E" : "W") : (x >= 0 ? "N" : "S");
+    x = Math.abs(x);
+    var d = Math.floor(x + 1e-12);
+    var mFull = (x - d) * 60;
+    var m = Math.floor(mFull + 1e-12);
+    var s = (mFull - m) * 60;
+    if (s >= 59.9995) { s = 0; m += 1; }
+    if (m >= 60) { m = 0; d += 1; }
+    function pad(n, w) { return String(n).padStart(w, "0"); }
+    return d + "° " + pad(m, 2) + "' " + s.toFixed(5) + '" ' + hemi;
+  }
+
+  function parseAngle(text) {
+    var t = String(text || "").trim();
+    if (!t) return null;
+    /* decimal degrees, optional hemisphere */
+    var dec = t.match(/^\s*([+-]?\d+(?:\.\d+)?)\s*([NSEW])?\s*$/i);
+    if (dec) {
+      var v = Number(dec[1]);
+      var H = (dec[2] || "").toUpperCase();
+      if (H === "S" || H === "W") v = -Math.abs(v);
+      if (H === "N" || H === "E") v = Math.abs(v);
+      return v;
+    }
+    var dms = t.match(/([NSEW])?\s*([+-]?\d+(?:\.\d+)?)\s*[°d\s]+\s*(\d+(?:\.\d+)?)?\s*['′m]?\s*(\d+(?:\.\d+)?)?\s*[\"″s]?\s*([NSEW])?/i);
+    if (dms) {
+      return dmsToDeg(dms[2], dms[3], dms[4], dms[1] || dms[5]);
+    }
+    return null;
   }
 
   function isComplete(crs) {
@@ -140,9 +197,15 @@
   }
 
   global.FNCrs = {
+    USFT: USFT,
+    GRS80_GEOG: GRS80_GEOG,
     zoneOptions: zoneOptions,
     projDef: projDef,
     gridToLonLat: gridToLonLat,
+    lonLatToGrid: lonLatToGrid,
+    dmsToDeg: dmsToDeg,
+    degToDms: degToDms,
+    parseAngle: parseAngle,
     isComplete: isComplete,
     missingList: missingList,
     formatLine: formatLine,

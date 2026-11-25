@@ -107,13 +107,15 @@ window.FNBundled = {
       "photo": {
         "watermarkFields": [
           "jobNo",
-          "pointNo",
           "dateTime",
-          "crew",
+          "pointNo",
+          "code",
           "gps",
-          "description"
+          "heading",
+          "crew",
+          "note"
         ],
-        "filenamePattern": "{pointNo}_{jobNo}_{yyyyMMdd-HHmm}.jpg",
+        "filenamePattern": "{pointNo}_{n}.jpg",
         "multiSuffix": "_{n}"
       },
       "exportMapping": {
@@ -323,13 +325,15 @@ window.FNBundled = {
       "photo": {
         "watermarkFields": [
           "jobNo",
-          "pointNo",
           "dateTime",
-          "crew",
+          "pointNo",
+          "code",
           "gps",
-          "description"
+          "heading",
+          "crew",
+          "note"
         ],
-        "filenamePattern": "{pointNo}_{jobNo}_{yyyyMMdd-HHmm}.jpg",
+        "filenamePattern": "{pointNo}_{n}.jpg",
         "multiSuffix": "_{n}"
       },
       "exportMapping": {

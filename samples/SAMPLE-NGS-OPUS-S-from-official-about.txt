@@ -1,0 +1,55 @@
+SAMPLE FILE — for format testing only.
+Transcribed from the published example on the NGS OPUS about / solution-formats page.
+Source: https://www.ngs.noaa.gov/OPUS/about.jsp
+Retrieved 25 November 2026 (America/Los_Angeles).
+This is not a field observation from this job. The values below are NGS's published
+example, not invented and not a control point from an NV5 or Field Notes project.
+
+     NGS OPUS SOLUTION REPORT
+     ========================
+
+     All computed coordinate accuracies are listed as peak-to-peak values.
+     For additional information: https://www.ngs.noaa.gov/OPUS/about.jsp#accuracy
+
+     USER: your.email@domain.com                    DATE: April 25, 2022
+     RINEX FILE: 2438057p.22o                        TIME: 17:28:17 UTC
+     SOFTWARE: page5 2008.25 master270.pl 16032      START: 2022/02/26  15:14:00
+     EPHEMERIS: igs21986.eph [precise]               STOP: 2022/02/26  19:47:00
+     NAV FILE: brdc0570.22n                          OBS USED: 10338 /  10976   :  94%
+     ANT NAME: TRMR8_GNSS          NONE              # FIXED AMB:    73 /    75   :  97%
+     ARP HEIGHT: 2.2501                              OVERALL PHASE RMS: 0.015(m)
+
+     REF FRAME: NAD_83(2011)(EPOCH:2010.0000)        ITRF2014 (EPOCH:2022.1554)
+
+     X:      1342663.281(m)   0.002(m)               1342662.331(m)   0.002(m)
+     Y:     -4680480.882(m)   0.006(m)              -4680479.449(m)   0.006(m)
+     Z:      4105726.867(m)   0.005(m)               4105726.841(m)   0.005(m)
+
+     LAT:     40 19 37.75141     0.003(m)              40 19 37.78518     0.003(m)
+     E LON:  286  0 22.68025     0.004(m)             286  0 22.65829     0.004(m)
+     W LON:   73 59 37.31975     0.004(m)              73 59 37.34171     0.004(m)
+     EL HGT:         -30.128(m)   0.006(m)                   -31.395(m)   0.006(m)
+     ORTHO HGT:        2.554(m)   0.049(m)     [NAVD88 (Computed using GEOID18)]
+
+                            UTM COORDINATES           STATE PLANE COORDINATES
+                             UTM (Zone 18)                 SPC (2900 NJ)
+Northing (Y) [meters]        4464554.902                   165960.156
+Easting (X)  [meters]         585486.862                   193023.668
+Convergence  [degrees]          0.65126667                   0.32765833
+Point Scale                     0.99968996                   0.99992278
+Combined Factor                 0.99969468                   0.99992751
+
+     US NATIONAL GRID DESIGNATOR: 18TWK8548764555(NAD 83)
+
+BASE STATIONS USED
+PID        DESIGNATION                      LATITUDE    LONGITUDE DIST(m)
+DI3830     NJTP PISCATAWAY CORS ARP        N403225.841 W0742804.135  46686.9
+DH3768     NJMT NJMT CORS ARP              N404747.350 W0742859.339  66591.5
+DI1077     NJOC NJOC CORS ARP              N395710.023 W0741136.593  44920.6
+
+NEAREST NGS PUBLISHED CONTROL POINT
+DM6970     853 1942 D TIDAL                N401937.751 W0735937.320      0.0
+
+This position and the above vector components were computed without any
+knowledge by the National Geodetic Survey regarding the equipment or
+field operating procedures used.

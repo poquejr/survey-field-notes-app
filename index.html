@@ -26,18 +26,21 @@
   <section id="view-menu" class="view">
     <p class="menu-job" id="menuJobLine">New day</p>
     <div class="menu-grid">
-      <button type="button" class="tile" id="tileField" data-view="field">Field Notes<span class="sub">Setups, points, photos, today’s log</span></button>
-      <button type="button" class="tile" id="tileLevel" data-view="level">Level Notes<span class="sub">Differential leveling, BS / HI / FS</span></button>
+      <button type="button" class="tile" id="tileField" data-view="field">Field Notes<span class="sub">Setups, photos, today’s log</span></button>
+      <button type="button" class="tile" id="tileLevel" data-view="level">Level Notes<span class="sub">BS / HI / FS and closure</span></button>
       <button type="button" class="tile tile-safety" id="tileSafety">Safety Sheet<span class="sub">JSA and crew sign-in</span></button>
-      <button type="button" class="tile" id="tileDaily" data-view="daily">Daily Report<span class="sub">Hours, work report, expenses, sign-off</span></button>
-      <button type="button" class="tile" id="tileManhole" data-view="manhole">Manhole Dips<span class="sub">Rim, dips, pipe table, flow sketch</span></button>
-      <button type="button" class="tile tile-muted" id="tileScan" data-view="scan">Scanning Notes<span class="sub">Coming in V2</span></button>
+      <button type="button" class="tile" id="tileDaily" data-view="daily">Daily Report<span class="sub">Hours, work, sign-off</span></button>
+      <button type="button" class="tile" id="tileControl" data-view="control">Control<span class="sub">Import list, mark used, Google Earth</span></button>
+      <button type="button" class="tile" id="tileTools" data-view="tools">Tools<span class="sub">Calculators and OPUS report</span></button>
     </div>
     <div class="menu-secondary">
+      <button type="button" class="btn" id="tileManhole" data-view="manhole">Manhole Dips</button>
       <button type="button" class="btn" id="tileReports" data-view="reports">Reports &amp; package</button>
       <button type="button" class="btn" id="btnSettings">Settings</button>
       <button type="button" class="btn" id="btnNew">New day</button>
     </div>
+    <button type="button" class="hero eod" id="btnFinishDay">Finish Day<span class="sub">Build today’s package — field book, report, photos, KMZ</span></button>
+    <p class="menu-more"><button type="button" class="btn-link" id="tileScan" data-view="scan">Scanning Notes — coming in V2</button></p>
     <p class="install-hint" id="installHint"></p>
   </section>
 
@@ -63,8 +66,12 @@
         </label>
       </div>
       <div class="card flat" id="crsBox" style="margin:12px 0 0;border-style:dashed">
-        <h2>Coordinate system <span class="badge incomplete" id="crsStatus">Required</span></h2>
-        <p class="hint">Required on the job. Shown on reports, the package manifest, and Google Earth. The epoch is never filled in silently — confirm it before export.</p>
+        <button type="button" class="header-toggle" id="crsToggle" aria-expanded="false">
+          <h2 style="margin:0">Coordinate system <span class="badge incomplete" id="crsStatus">Required</span></h2>
+          <span class="chev" id="crsChev">Show</span>
+        </button>
+        <div id="crsBody" class="hidden">
+        <p class="hint">Required on reports and Google Earth. The epoch is never filled in silently — confirm it before export.</p>
         <div class="grid g2" id="crsFields">
           <label class="fld span-row"><span>Projection / zone</span>
             <select id="crsZone"><option value="">Select zone or projection…</option></select>
@@ -120,6 +127,7 @@
           </label>
         </div>
         <p class="hint" id="crsFromJxl"></p>
+        </div>
       </div>
       <button type="button" class="header-toggle" id="headerToggle" aria-expanded="false" style="margin-top:12px">
         <h2 style="margin:0">Crew, conditions, equipment</h2>
@@ -159,6 +167,12 @@
       </div>
     </div>
 
+    <div class="current-pt" id="currentPtBar">
+      <label class="fld" style="flex:1;margin:0"><span>Current point</span>
+        <input id="currentPoint" type="text" list="ctrlList" autocomplete="off" placeholder="Photos and new entries use this">
+      </label>
+    </div>
+
     <div class="hero-actions">
       <button type="button" class="hero safety" id="btnSafety">Start of day — Safety / JSA<span class="sub">Job safety analysis and crew sign-in</span></button>
       <div class="hero-row">
@@ -180,16 +194,17 @@
     </div>
 
     <div class="card" id="importCard">
-      <h2>Import</h2>
-      <p class="hint">Control lists, point files, and Trimble JobXML (.jxl) stay on this device. Native .job files are not opened — export .jxl from Trimble Access or TBC first.</p>
+      <h2>More imports</h2>
+      <p class="hint">JobXML and extra point files stay on this device. Native .job files are not opened — export .jxl from Trimble Access or TBC first. Control CSV is on the Control screen.</p>
       <div class="actions" style="margin-top:0">
-        <button type="button" class="btn" id="btnImportControl">Import control CSV</button>
+        <button type="button" class="btn" id="btnOpenControl" data-view="control">Control list</button>
         <button type="button" class="btn" id="btnImportPoints">Import points CSV/TXT</button>
-        <button type="button" class="btn" id="btnImportRef">Attach reference PDF/image</button>
         <button type="button" class="btn" id="btnImportJxl">Import Trimble JobXML (.jxl)</button>
+        <button type="button" class="btn" id="btnImportRef">Attach reference PDF/image</button>
       </div>
       <div id="importSummary" class="hint" style="margin-top:8px"></div>
     </div>
+    <datalist id="ctrlList"></datalist>
 
   </section>
 
@@ -221,6 +236,19 @@
     </div>
   </section>
 
+  <section id="view-control" class="view hidden">
+    <div class="card" id="controlPage">
+      <h2>Job control</h2>
+      <p class="hint">Import a control CSV, review the list, and export a KMZ/KML that opens in Google Earth. Setups pick points from this list and mark them used.</p>
+      <div id="controlForm"></div>
+    </div>
+  </section>
+
+  <section id="view-tools" class="view hidden">
+    <div id="toolsHome"></div>
+    <div id="toolsScreen" class="hidden"></div>
+  </section>
+
   <section id="view-scan" class="view hidden">
     <div class="card">
       <h2>Scanning Notes</h2>
@@ -238,7 +266,7 @@
         <button type="button" class="btn" id="btnDailyReport">Daily field report</button>
         <button type="button" class="btn" id="btnMhReport">Manhole dips</button>
       </div>
-      <button type="button" class="hero eod" id="btnPackage" style="margin-top:12px">Export package (ZIP)<span class="sub">Choose reports, photos, sketches, and CSVs</span></button>
+      <button type="button" class="hero eod" id="btnPackage" style="margin-top:12px">Finish Day — build package<span class="sub">One folder with PDFs, photos, KMZ, and CSVs</span></button>
       <button type="button" class="btn btn-block" id="btnCsv" style="margin-top:10px">Download entries CSV</button>
     </div>
   </section>
@@ -269,6 +297,9 @@
   <script src="./js/vendor/leaflet/leaflet.js"></script>
   <script src="./js/platform.js"></script>
   <script src="./js/crs.js"></script>
+  <script src="./js/pdf.js"></script>
+  <script src="./js/opus.js"></script>
+  <script src="./js/tools.js"></script>
   <script src="./js/weather.js"></script>
   <script src="./js/jxl.js"></script>
   <script src="./js/idb.js"></script>

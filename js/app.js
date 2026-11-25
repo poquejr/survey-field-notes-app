@@ -105,7 +105,7 @@
   }
   function emptyJsa() { return { task: "", location: "", comments: "", hospitalId: "", hospitalOther: "", hazards: {}, ppe: {}, ppeCustom: {}, signers: [] }; }
   function emptyState() {
-    return { header: emptyHeader(), events: [], jsa: null, controlList: [], importedPoints: [], references: [], level: emptyLevel(), dailyReport: emptyDailyReport(), manholes: emptyManholeSheet() };
+    return { header: emptyHeader(), events: [], jsa: null, controlList: [], importedPoints: [], references: [], level: emptyLevel(), dailyReport: emptyDailyReport(), manholes: emptyManholeSheet(), currentPoint: "", opusReports: [] };
   }
   function emptyCheck() {
     return { pt: "", hdObs: "", hdRec: "", elevObs: "", elevRec: "", nObs: "", nRec: "", eObs: "", eRec: "", tol: "" };
@@ -150,13 +150,15 @@
         if (!base.manholes || !Array.isArray(base.manholes.holes)) base.manholes = emptyManholeSheet();
         if (!Array.isArray(base.events)) base.events = [];
         if (!Array.isArray(base.controlList)) base.controlList = [];
+        if (base.currentPoint == null) base.currentPoint = "";
+        if (!Array.isArray(base.opusReports)) base.opusReports = [];
       }
       state = base;
     });
   }
   function showView(name) {
     currentView = name;
-    ["menu", "field", "level", "daily", "manhole", "scan", "reports"].forEach(function (v) {
+    ["menu", "field", "level", "daily", "manhole", "scan", "reports", "control", "tools"].forEach(function (v) {
       var el = $("view-" + v);
       if (el) el.classList.toggle("hidden", v !== name);
     });
@@ -164,7 +166,9 @@
     if (name === "level") renderLevel();
     if (name === "daily") renderDaily();
     if (name === "manhole") renderManholes();
-    if (name === "field") { updateCrsStatus(); updatePointRangeDisplay(); }
+    if (name === "field") { updateCrsStatus(); updatePointRangeDisplay(); fillControlDatalist(); writeCurrentPoint(); }
+    if (name === "control") renderControl();
+    if (name === "tools") mountTools();
     if (name === "menu") updateMenuLine();
   }
   function updateMenuLine() {
@@ -229,6 +233,11 @@
       el.addEventListener("change", function () { readHeader(); scheduleSave(); });
     });
     if ($("headerToggle")) {
+      if ($("crsToggle")) $("crsToggle").addEventListener("click", function () {
+        var open = $("crsBody").classList.toggle("hidden") === false;
+        $("crsToggle").setAttribute("aria-expanded", open ? "true" : "false");
+        if ($("crsChev")) $("crsChev").textContent = open ? "Hide" : "Show";
+      });
       $("headerToggle").addEventListener("click", function () {
         var body = $("headerBody");
         var open = body.classList.contains("hidden");
@@ -275,7 +284,7 @@
       },
       hospitals: [], emergencyContacts: [],
       tolerances: { levelClosureFormula: "k*sqrt(km)", levelClosureK: null },
-      photo: { watermarkFields: ["jobNo","pointNo","dateTime","crew","gps","description"], filenamePattern: "{pointNo}_{jobNo}_{yyyyMMdd-HHmm}.jpg", multiSuffix: "_{n}" },
+      photo: { watermarkFields: ["jobNo","dateTime","pointNo","code","gps","heading","crew","note"], filenamePattern: "{pointNo}_{n}.jpg", multiSuffix: "_{n}" },
       exportMapping: { csv: {}, smartsheet: { workspaceHint: "", sheetHint: "", columns: {} } }
     };
   }
@@ -844,7 +853,7 @@
     openOverlay("GNSS base setup", existing ? "Edit" : "New");
     $("ovBody").innerHTML = '<div class="grid g2">' +
       fieldHtml("gTime", "Time", ev.time, { type: "time" }) +
-      fieldHtml("gPt", "Point / control used", ev.pointNo || f.occupied || f.station, { ph: "Point number" }) +
+      fieldHtml("gPt", "Point / control used", ev.pointNo || f.occupied || f.station, { ph: "Point number", list: "ctrlList" }) +
       fieldHtml("gAnt", "Antenna type", f.antenna) +
       fieldHtml("gHt", "Antenna / instrument height", f.height, { ph: "Leave blank if not measured" }) +
       fieldHtml("gHtType", "Height method", f.heightMethod, { ph: HEIGHT_METHOD_PH, suggestions: HEIGHT_METHOD_SUGGESTIONS, span: true }) +
@@ -871,6 +880,8 @@
       ev.type = "gnss_base";
       var warn = warnIfPointIssue(ev.pointNo, ev.id);
       ev.warnOutside = warn.outside; ev.warnDuplicate = warn.duplicate;
+      setCurrentPoint(ev.pointNo);
+      markControlUsed(ev.pointNo, ev);
       upsertEvent(ev); closeOverlay();
     };
   }
@@ -906,10 +917,10 @@
     openOverlay("Total station setup", existing ? "Edit" : "New");
     $("ovBody").innerHTML = '<div class="grid g2">' +
       fieldHtml("tTime", "Time", ev.time, { type: "time" }) +
-      fieldHtml("tOcc", "Occupied point", ev.pointNo || f.occupied) +
+      fieldHtml("tOcc", "Occupied point", ev.pointNo || f.occupied, { list: "ctrlList" }) +
       fieldHtml("tHI", "Instrument height (HI)", f.hi, { ph: "Leave blank if not measured" }) +
       tsHiMethodSelect(f.hiMethod) +
-      fieldHtml("tBs", "Backsight point", f.bsPt) +
+      fieldHtml("tBs", "Backsight point", f.bsPt, { list: "ctrlList" }) +
       fieldHtml("tHT", "Target height (HT)", f.ht) +
       fieldHtml("tHTMethod", "HT method", f.htMethod) +
       fieldHtml("tAz", "Azimuth / circle", f.azimuth) +
@@ -960,12 +971,15 @@
       var warn = warnIfPointIssue(ev.pointNo, ev.id);
       ev.warnOutside = warn.outside; ev.warnDuplicate = warn.duplicate;
       if ($("tBs").value) warnIfPointIssue($("tBs").value, ev.id);
+      setCurrentPoint(ev.pointNo);
+      markControlUsed(ev.pointNo, ev);
+      markControlUsed($("tBs").value, ev);
       upsertEvent(ev); closeOverlay();
     };
   }
 
   function photoPattern() {
-    return (profile && profile.photo && profile.photo.filenamePattern) || "{pointNo}_{jobNo}_{yyyyMMdd-HHmm}.jpg";
+    return (profile && profile.photo && profile.photo.filenamePattern) || "{pointNo}_{n}.jpg";
   }
   function photoSuffix() {
     return (profile && profile.photo && profile.photo.multiSuffix) || "_{n}";
@@ -974,30 +988,46 @@
     function p(n) { return String(n).padStart(2, "0"); }
     return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + "-" + p(d.getHours()) + p(d.getMinutes());
   }
-  function buildPhotoName(pointNo, when, existingNames) {
-    var job = sanitize(state.header.jobNo || "job") || "job";
-    var pt = sanitize(pointNo || "pt") || "pt";
-    var stamp = formatStamp(when);
-    var base = photoPattern()
-      .replace("{pointNo}", pt)
-      .replace("{jobNo}", job)
-      .replace("{yyyyMMdd-HHmm}", stamp);
-    if (!/\.jpe?g$/i.test(base)) base += ".jpg";
-    var names = existingNames || [];
+  function usedPhotoNames(existingNames) {
     var used = {};
-    names.forEach(function (n) { used[String(n).toLowerCase()] = true; });
+    (existingNames || []).forEach(function (n) { used[String(n).toLowerCase()] = true; });
     (state.events || []).forEach(function (e) { if (e.filename) used[String(e.filename).toLowerCase()] = true; });
-    if (!used[base.toLowerCase()]) return base;
-    var suffix = photoSuffix();
-    var i = 2, name;
+    return used;
+  }
+  function nextPhotoIndex(pointNo, used) {
+    var pt = sanitize(pointNo || "pt") || "pt";
+    var i = 1, name;
     do {
-      name = base.replace(/(\.jpe?g)$/i, suffix.replace("{n}", String(i)) + "$1");
+      name = (pt + "_" + i + ".jpg").toLowerCase();
       i++;
-    } while (used[name.toLowerCase()] && i < 99);
-    return name;
+    } while (used[name] && i < 200);
+    return i - 1;
+  }
+  function buildPhotoName(pointNo, when, existingNames) {
+    var job = sanitize(state.header.jobNo || "NOJOB") || "NOJOB";
+    var pt = sanitize(pointNo || "pt") || "pt";
+    var stamp = formatStamp(when || new Date());
+    var used = usedPhotoNames(existingNames);
+    var pattern = photoPattern();
+    var name;
+    if (/\{n\}/.test(pattern) && !/yyyyMMdd/i.test(pattern)) {
+      var idx = nextPhotoIndex(pt, used);
+      name = pattern.replace("{pointNo}", pt).replace("{jobNo}", job).replace("{n}", String(idx));
+    } else {
+      name = pattern.replace("{pointNo}", pt).replace("{jobNo}", job).replace("{yyyyMMdd-HHmm}", stamp).replace("{n}", "1");
+    }
+    if (!/\.jpe?g$/i.test(name)) name += ".jpg";
+    if (!used[name.toLowerCase()]) return name;
+    var suffix = photoSuffix();
+    var i = 2, cand;
+    do {
+      cand = name.replace(/(\.jpe?g)$/i, suffix.replace("{n}", String(i)) + "$1");
+      i++;
+    } while (used[cand.toLowerCase()] && i < 200);
+    return cand;
   }
   function watermarkFields() {
-    return (profile && profile.photo && profile.photo.watermarkFields) || ["jobNo","pointNo","dateTime","crew","gps","description"];
+    return (profile && profile.photo && profile.photo.watermarkFields) || ["jobNo","dateTime","pointNo","code","gps","heading","crew","note"];
   }
   function drawWatermark(img, meta) {
     var canvas = document.createElement("canvas");
@@ -1007,12 +1037,16 @@
     ctx.drawImage(img, 0, 0);
     var lines = [];
     var fields = watermarkFields();
-    if (fields.indexOf("jobNo") >= 0 && meta.jobNo) lines.push("Job " + meta.jobNo);
-    if (fields.indexOf("pointNo") >= 0 && meta.pointNo) lines.push("Pt " + meta.pointNo);
-    if (fields.indexOf("dateTime") >= 0 && meta.dateTime) lines.push(meta.dateTime);
-    if (fields.indexOf("crew") >= 0 && meta.crew) lines.push(meta.crew);
-    if (fields.indexOf("gps") >= 0 && meta.gps) lines.push(meta.gps);
-    if (fields.indexOf("description") >= 0 && meta.description) lines.push(meta.description);
+    function want(k) { return !fields.length || fields.indexOf(k) >= 0; }
+    if (want("jobNo") && meta.jobNo) lines.push("Job " + meta.jobNo);
+    if (want("dateTime") && meta.dateTime) lines.push(meta.dateTime);
+    if (want("pointNo") && meta.pointNo) lines.push("Pt " + meta.pointNo);
+    if (want("code") && meta.code) lines.push(meta.code);
+    if (want("description") && meta.description && meta.description !== meta.code) lines.push(meta.description);
+    if (want("gps") && meta.gps) lines.push(meta.gps);
+    if (want("heading") && meta.heading) lines.push("Hdg " + meta.heading);
+    if (want("crew") && meta.crew) lines.push(meta.crew);
+    if (want("note") && meta.note) lines.push(meta.note);
     if (!lines.length) {
       return new Promise(function (resolve) { canvas.toBlob(function (b) { resolve({ blob: b, dataUrl: canvas.toDataURL("image/jpeg", 0.92) }); }, "image/jpeg", 0.92); });
     }
@@ -1036,16 +1070,19 @@
     var ev = existing || { id: uid(), type: "photo", time: nowTime(), ts: new Date().toISOString(), fields: {} };
     photoDraft = ev;
     openOverlay("Photo", existing ? "Edit" : "New");
+    if (!ev.pointNo) ev.pointNo = state.currentPoint || "";
+    var gpsLine = ev.lat && ev.lon ? (ev.lat + ", " + ev.lon + (ev.gpsAccuracy ? " \u00b1" + ev.gpsAccuracy + " m" : "") + (ev.heading ? "  Hdg " + ev.heading : "")) : "";
     $("ovBody").innerHTML = '<div class="grid g2">' +
       fieldHtml("pTime", "Time", ev.time, { type: "time" }) +
-      fieldHtml("pPt", "Point no.", ev.pointNo, { ph: "Used in the file name" }) +
-      fieldHtml("pDesc", "Description", ev.notes, { span: true, type: "textarea" }) +
+      fieldHtml("pPt", "Point no.", ev.pointNo, { ph: "File name uses this, e.g. 1045_1.jpg", list: "ctrlList" }) +
+      fieldHtml("pCode", "Code / description", ev.code || (ev.fields && ev.fields.code) || "", { ph: "Feature code or short description" }) +
+      fieldHtml("pNote", "Short note", ev.notes, { span: true }) +
       '</div><div class="photo-preview" id="pPrev"></div>' +
       '<div class="actions"><button type="button" class="btn btn-primary" id="pCam">Take photo</button>' +
       '<button type="button" class="btn" id="pLib">Choose from library</button>' +
       '<button type="button" class="btn" id="pGps">Add GPS</button></div>' +
-      '<p class="hint" id="pGpsLine">' + esc(ev.lat && ev.lon ? (ev.lat + ", " + ev.lon) : "") + "</p>" +
-      '<p class="hint">Two pickers are used so iOS can offer the camera and the library separately. The watermark and file name are applied on this device.</p>';
+      '<p class="hint" id="pGpsLine">' + esc(gpsLine) + "</p>" +
+      '<p class="hint">The file is named from the point (1045_1.jpg, 1045_2.jpg, \u2026). The stamp includes job, date/time, point, code, GPS, heading, crew, and note when those are known — never invented.</p>';
     $("ovFoot").innerHTML = '<button type="button" class="btn btn-primary" id="pSave">Save photo</button>';
     function showPrev(url) {
       $("pPrev").innerHTML = url ? '<img alt="Photo preview" src="' + url + '">' : "";
@@ -1055,23 +1092,37 @@
         if (rec && rec.blob) showPrev(URL.createObjectURL(rec.blob));
       });
     }
-    $("pCam").onclick = function () { $("cameraInput").click(); };
+    function applyFix(pos) {
+      if (!pos || pos.lat == null || pos.lon == null) return;
+      ev.lat = Number(pos.lat).toFixed(6);
+      ev.lon = Number(pos.lon).toFixed(6);
+      ev.gpsAccuracy = (pos.accuracy != null && isFinite(pos.accuracy)) ? String(Math.round(pos.accuracy * 10) / 10) : "";
+      ev.heading = (pos.heading != null && isFinite(pos.heading)) ? String(Math.round(pos.heading)) : "";
+      var line = ev.lat + ", " + ev.lon;
+      if (ev.gpsAccuracy) line += " \u00b1" + ev.gpsAccuracy + " m";
+      if (ev.heading) line += "  Hdg " + ev.heading + "\u00b0";
+      if ($("pGpsLine")) $("pGpsLine").textContent = line;
+    }
+    $("pCam").onclick = function () {
+      FNPlatform.getLocation().then(applyFix).catch(function () {});
+      $("cameraInput").click();
+    };
     $("pLib").onclick = function () { $("libraryInput").click(); };
     $("pGps").onclick = function () {
-      FNPlatform.getLocation().then(function (pos) {
-        ev.lat = Number(pos.lat).toFixed(6);
-        ev.lon = Number(pos.lon).toFixed(6);
-        $("pGpsLine").textContent = ev.lat + ", " + ev.lon;
-      }).catch(function () { toast("Location unavailable"); });
+      FNPlatform.getLocation().then(applyFix).catch(function () { toast("Location unavailable"); });
     };
     $("pSave").onclick = function () {
       ev.time = $("pTime").value;
       ev.pointNo = $("pPt").value;
-      ev.notes = $("pDesc").value;
+      ev.code = $("pCode") ? $("pCode").value : ev.code;
+      ev.notes = $("pNote") ? $("pNote").value : ev.notes;
+      ev.fields = ev.fields || {};
+      ev.fields.code = ev.code || "";
       ev.type = "photo";
       if (!ev.fileId) { toast("Take or choose a photo first"); return; }
       var warn = warnIfPointIssue(ev.pointNo, ev.id);
       ev.warnOutside = warn.outside; ev.warnDuplicate = warn.duplicate;
+      setCurrentPoint(ev.pointNo);
       upsertEvent(ev); photoDraft = null; closeOverlay();
     };
   }
@@ -1085,14 +1136,25 @@
         var when = new Date();
         ev.time = $("pTime") ? $("pTime").value || nowTime() : nowTime();
         ev.pointNo = $("pPt") ? $("pPt").value : ev.pointNo;
-        ev.notes = $("pDesc") ? $("pDesc").value : ev.notes;
+        ev.code = $("pCode") ? $("pCode").value : ev.code;
+        ev.notes = $("pNote") ? $("pNote").value : ev.notes;
+        ev.fields = ev.fields || {};
+        ev.fields.code = ev.code || "";
+        var gps = "";
+        if (ev.lat && ev.lon) {
+          gps = ev.lat + ", " + ev.lon;
+          if (ev.gpsAccuracy) gps += " \u00b1" + ev.gpsAccuracy + " m";
+        }
         var meta = {
           jobNo: state.header.jobNo || "",
           pointNo: ev.pointNo || "",
           dateTime: when.toLocaleString(),
-          crew: [state.header.partyChief, state.header.crew].filter(Boolean).join(" · "),
-          gps: (ev.lat && ev.lon) ? (ev.lat + ", " + ev.lon) : "",
-          description: ev.notes || ""
+          crew: [state.header.partyChief, state.header.crew].filter(Boolean).join(" \u00b7 "),
+          gps: gps,
+          heading: ev.heading ? ev.heading + "\u00b0" : "",
+          code: ev.code || "",
+          note: ev.notes || "",
+          description: ev.code || ev.notes || ""
         };
         drawWatermark(img, meta).then(function (out) {
           var name = buildPhotoName(ev.pointNo, when);
@@ -1132,7 +1194,7 @@
   }
   function looksHeader(row) {
     var s = row.map(function (c) { return c.toLowerCase(); }).join(" ");
-    return /point|pt\b|north|east|elev|n\b|e\b|z\b|desc|code/.test(s) && !/^\d/.test(row[0] || "");
+    return /point|pt\b|north|east|elev|lat|lon|long|n\b|e\b|z\b|desc|code/.test(s) && !/^\d/.test(row[0] || "");
   }
   function applyOrder(row, order) {
     var m = { p: "", n: "", e: "", z: "", d: "" };
@@ -1146,25 +1208,63 @@
   function openCsvImport(kind, text, fileName) {
     var rows = parseDelimited(text);
     if (!rows.length) { toast("That file has no rows"); return; }
-    var start = looksHeader(rows[0]) ? 1 : 0;
-    var preview = rows.slice(start, start + 3).map(function (r) { return r.join(" · "); }).join("\n");
+    var hasHeader = looksHeader(rows[0]);
+    var startRow = hasHeader ? 1 : 0;
+    var headers = hasHeader ? rows[0] : rows[0].map(function (_, i) { return "Column " + (i + 1); });
+    var sig = headerSignature(headers);
+    var remembered = loadColMap(sig);
+    var map = remembered && remembered.length === headers.length ? remembered.slice() : headers.map(function (h, i) {
+      var g = guessField(h);
+      if (g) return g;
+      if (!hasHeader) {
+        var sample = rows[startRow] || [];
+        if (headers.length >= 5 && i < 5) return ["p", "n", "e", "z", "d"][i];
+        if (headers.length >= 3 && i === 0) return "p";
+        if (headers.length >= 3 && i === 1 && looksLat(sample[1])) return "lat";
+        if (headers.length >= 3 && i === 2 && looksLon(sample[2])) return "lon";
+      }
+      return "";
+    });
+    var fieldOpts = [["", "(skip)"], ["p", "Point"], ["n", "North"], ["e", "East"], ["z", "Elev"], ["d", "Desc / code"], ["lat", "Latitude"], ["lon", "Longitude"]];
+    var preview = rows.slice(startRow, startRow + 4);
+    var html = '<p class="hint">Match each column once. This mapping is remembered for files with the same headers.</p><div class="col-map">';
+    headers.forEach(function (h, i) {
+      var opts = fieldOpts.map(function (o) {
+        return '<option value="' + o[0] + '"' + (map[i] === o[0] ? " selected" : "") + ">" + o[1] + "</option>";
+      }).join("");
+      var sample = preview.map(function (r) { return r[i] || ""; }).filter(Boolean).slice(0, 2).join("  ·  ");
+      if (sample.length > 48) sample = sample.slice(0, 47) + "\u2026";
+      html += '<div class="col-map-row"><div><strong>' + esc(h) + '</strong><div class="sample">' + esc(sample) + "</div></div>" +
+        '<select data-cmap="' + i + '">' + opts + "</select></div>";
+    });
+    html += "</div>";
+    if (hasHeader) html += '<p class="hint">The first row is treated as a header and will not be imported as a point.</p>';
     openOverlay(kind === "control" ? "Import control" : "Import points", fileName || "");
-    $("ovBody").innerHTML = '<p class="hint">Select the column order. Nothing is sent off this device.</p>' +
-      '<label class="fld"><span>Column order</span><select id="csvOrder">' +
-      '<option value="PNEZD">PNEZD (Point, North, East, Elev, Desc)</option>' +
-      '<option value="PENZD">PENZD (Point, East, North, Elev, Desc)</option>' +
-      '<option value="PNED">PNED</option><option value="PEND">PEND</option>' +
-      "</select></label>" +
-      (start ? "<p class=\"hint\">The first row looks like a header and will be skipped.</p>" : "") +
-      "<pre class=\"hint\" style=\"white-space:pre-wrap\">" + esc(preview) + "</pre>";
+    $("ovBody").innerHTML = html;
     $("ovFoot").innerHTML = '<button type="button" class="btn btn-primary" id="csvGo">Import</button>';
     $("csvGo").onclick = function () {
-      var order = $("csvOrder").value;
+      var cmap = [];
+      headers.forEach(function (_, i) {
+        var sel = document.querySelector('[data-cmap="' + i + '"]');
+        cmap[i] = sel ? sel.value : "";
+      });
+      saveColMap(sig, cmap);
       var list = [];
-      for (var i = start; i < rows.length; i++) {
-        if (!rows[i] || !rows[i][0]) continue;
-        var rec = applyOrder(rows[i], order);
-        rec.sourceFile = fileName || "";
+      for (var r = startRow; r < rows.length; r++) {
+        var row = rows[r];
+        if (!row || !row.length) continue;
+        var rec = { name: "", n: "", e: "", z: "", desc: "", lat: "", lon: "", sourceFile: fileName || "" };
+        cmap.forEach(function (f, i) {
+          var v = row[i] || "";
+          if (f === "p") rec.name = v;
+          else if (f === "n") rec.n = v;
+          else if (f === "e") rec.e = v;
+          else if (f === "z") rec.z = v;
+          else if (f === "d") rec.desc = v;
+          else if (f === "lat") rec.lat = v;
+          else if (f === "lon") rec.lon = v;
+        });
+        if (!rec.name && !rec.n && !rec.e && !rec.lat) continue;
         list.push(rec);
       }
       if (kind === "control") state.controlList = (state.controlList || []).concat(list);
@@ -1172,7 +1272,9 @@
       saveNow();
       updatePointRangeDisplay();
       updateImportSummary();
+      fillControlDatalist();
       closeOverlay();
+      if (kind === "control") renderControl();
       toast("Imported " + list.length + " " + (kind === "control" ? "control" : "point") + " rows");
     };
   }
@@ -2435,8 +2537,8 @@
     return toCsv(rows);
   }
   function pointsCsv(list) {
-    var rows = [["point","n","e","z","desc","lat","lon","source"]];
-    (list || []).forEach(function (p) { rows.push([p.name || p.pt || "", p.n || "", p.e || "", p.z || "", p.desc || "", p.lat || "", p.lon || "", p.sourceFile || p.importedFrom || ""]); });
+    var rows = [["point","n","e","z","desc","lat","lon","used","source","refFrame","epoch"]];
+    (list || []).forEach(function (p) { rows.push([p.name || p.pt || "", p.n || "", p.e || "", p.z || "", p.desc || "", p.lat || "", p.lon || "", p.used ? "Y" : "", p.sourceFile || p.importedFrom || "", p.refFrame || "", p.epoch || ""]); });
     return toCsv(rows);
   }
   function levelCsv() {
@@ -2711,7 +2813,8 @@
     var day = (state.header.date || todayISO()).replace(/-/g, "");
     return job + "_" + title + "_" + day;
   }
-  function openPackageWizard() {
+  function openPackageWizard() { openFinishDay(); }
+  function openPackageWizardLegacy() {
     var key = PKG_PREF + (state.header.jobNo || "_");
     FNIdb.kvGet(key).then(function (saved) {
       var remembered = (saved && saved.items) || {};
@@ -2885,7 +2988,485 @@
       reader.readAsDataURL(file);
     });
   }
-  function bindUi() {
+  function fillControlDatalist() {
+    var el = $("ctrlList");
+    if (!el) return;
+    el.innerHTML = (state.controlList || []).map(function (p) {
+      var name = p.name || p.pt || "";
+      return name ? '<option value="' + esc(name) + '"></option>' : "";
+    }).join("");
+  }
+  function writeCurrentPoint() {
+    if ($("currentPoint") && $("currentPoint") !== document.activeElement) {
+      $("currentPoint").value = state.currentPoint || "";
+    }
+  }
+  function setCurrentPoint(pt) {
+    var v = String(pt || "").trim();
+    if (v) state.currentPoint = v;
+    writeCurrentPoint();
+    scheduleSave();
+  }
+  function markControlUsed(pointNo, ev) {
+    var key = pointKey(pointNo);
+    if (!key) return;
+    (state.controlList || []).forEach(function (p) {
+      if (pointKey(p.name || p.pt) !== key) return;
+      p.used = true;
+      p.usedIn = p.usedIn || [];
+      if (ev && ev.id && p.usedIn.indexOf(ev.id) < 0) p.usedIn.push(ev.id);
+      p.lastUsed = ev && (ev.ts || ev.time) || "";
+      p.lastUsedType = ev && ev.type || "";
+    });
+  }
+  function controlPickerHint() {
+    return (state.controlList || []).length
+      ? '<p class="hint">Pick from today\u2019s control list or type a point.</p>'
+      : "";
+  }
+
+  var COLMAP_KEY = "fn-colmap-v1";
+  function headerSignature(headers) {
+    return (headers || []).map(function (h) { return String(h || "").trim().toLowerCase(); }).join("|");
+  }
+  function guessField(header) {
+    var h = String(header || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    if (!h) return "";
+    if (/^(lat|latitude)$/.test(h) || /(^| )lat(itude)?$/.test(h)) return "lat";
+    if (/^(lon|long|lng|longitude)$/.test(h) || /longitu|\blon\b|\blng\b/.test(h)) return "lon";
+    if (/northing|^n$|^y$|^north$/.test(h)) return "n";
+    if (/easting|^e$|^x$|^east$/.test(h)) return "e";
+    if (/^(z|elev|elevation|ortho|ht|hgt|height)$/.test(h) || /elev/.test(h)) return "z";
+    if (/^(p|pt|pnt|point|name|station|pid|pointno|point number)$/.test(h) || /point/.test(h)) return "p";
+    if (/^(d|desc|description)$/.test(h) || /desc|code|comment|feature/.test(h)) return "d";
+    return "";
+  }
+  function loadColMap(sig) {
+    try {
+      var all = JSON.parse(localStorage.getItem(COLMAP_KEY) || "{}");
+      return all[sig] || null;
+    } catch (e) { return null; }
+  }
+  function saveColMap(sig, map) {
+    try {
+      var all = JSON.parse(localStorage.getItem(COLMAP_KEY) || "{}");
+      all[sig] = map;
+      localStorage.setItem(COLMAP_KEY, JSON.stringify(all));
+    } catch (e) {}
+  }
+  function looksLat(v) {
+    var n = num(v);
+    return n != null && Math.abs(n) > 0 && Math.abs(n) <= 90;
+  }
+  function looksLon(v) {
+    var n = num(v);
+    return n != null && Math.abs(n) > 0 && Math.abs(n) <= 360;
+  }
+
+  function mountTools() {
+    if (!window.FNTools || !$("toolsHome")) return;
+    FNTools.mount($("toolsHome"), $("toolsScreen"), {
+      toast: toast,
+      esc: esc,
+      getCrs: crsObj,
+      addControl: function (pt) {
+        state.controlList = state.controlList || [];
+        state.controlList.push(pt);
+        fillControlDatalist();
+        updateImportSummary();
+        saveNow();
+        if (pt && pt.name) setCurrentPoint(pt.name);
+      },
+      saveOpus: saveOpusReport,
+      saveBlob: function (blob, name) { return FNPlatform.saveBlob(blob, name); },
+      levelCalc: function () { try { return levelCompute(); } catch (e) { return null; } }
+    });
+  }
+  function saveOpusReport(sol) {
+    if (!sol || !sol.ok || !window.FNOpus) return;
+    var safe = FNOpus.safeSummary(sol);
+    delete safe.contributor;
+    state.opusReports = state.opusReports || [];
+    var id = (sol.rinex || "") + "|" + (sol.start || "") + "|" + (sol.date || "");
+    state.opusReports = state.opusReports.filter(function (r) { return r._id !== id; });
+    safe._id = id;
+    safe._savedAt = new Date().toISOString();
+    state.opusReports.push(safe);
+    saveNow();
+  }
+
+  function renderControl() {
+    var root = $("controlForm");
+    if (!root) return;
+    fillControlDatalist();
+    var list = state.controlList || [];
+    var usedN = list.filter(function (p) { return p.used; }).length;
+    var html = '<div class="ctrl-toolbar">' +
+      '<button type="button" class="btn btn-primary" id="btnImportControl">Import CSV</button>' +
+      '<button type="button" class="btn" id="btnExportCtrlKmz">Export KMZ</button>' +
+      '<button type="button" class="btn" id="btnExportCtrlKml">Export KML</button>' +
+      '<button type="button" class="btn" id="btnExportCtrlCsv">Export CSV</button>' +
+      "</div>";
+    html += '<p class="hint">' + (list.length ? (list.length + " points \u00b7 " + usedN + " used in a setup") : "No control loaded yet. Import a P,N,E,Z,D or P,Lat,Lon CSV. Column order is mapped once and remembered.") + "</p>";
+    if (!list.length) {
+      html += '<p class="hint">For grid files, set the job coordinate system (CA State Plane zone and units) so Google Earth can plot them. Geographic files already have lat/lon.</p>';
+    }
+    list.forEach(function (p, i) {
+      var used = p.used ? '<span class="badge used">Used' + (p.usedIn && p.usedIn.length ? " \u00d7" + p.usedIn.length : "") + "</span>" : '<span class="badge incomplete">Not used</span>';
+      var bits = [];
+      if (p.n || p.e) bits.push("N " + (p.n || "\u2014") + "  E " + (p.e || "\u2014"));
+      if (p.z) bits.push("Z " + p.z);
+      if (p.lat || p.lon) bits.push((p.lat || "") + ", " + (p.lon || ""));
+      if (p.desc) bits.push(p.desc);
+      html += '<div class="ctrl-item" data-ci="' + i + '"><div class="name">' + esc(p.name || p.pt || "(unnamed)") + "</div>" + used +
+        '<div class="meta">' + esc(bits.join(" \u00b7 ")) + '</div></div>';
+    });
+    root.innerHTML = html;
+    $("btnImportControl").onclick = function () { $("controlInput").click(); };
+    $("btnExportCtrlKmz").onclick = function () { exportControlEarth("kmz"); };
+    $("btnExportCtrlKml").onclick = function () { exportControlEarth("kml"); };
+    $("btnExportCtrlCsv").onclick = function () {
+      FNPlatform.saveBlob(new Blob([pointsCsv(state.controlList)], { type: "text/csv" }), "Control.csv");
+    };
+  }
+
+  function exportControlEarth(kind) {
+    var list = state.controlList || [];
+    if (!list.length) { toast("Import control first"); return; }
+    var placed = 0, skipped = 0;
+    var marks = list.map(function (p) {
+      var ll = pointLonLat(p);
+      if (!ll) { skipped++; return ""; }
+      placed++;
+      var desc = [
+        p.desc || "",
+        p.n || p.e ? ("N " + (p.n || "") + "  E " + (p.e || "")) : "",
+        p.z ? ("Z " + p.z) : "",
+        p.used ? "Used in a setup" : "",
+        "CRS: " + FNCrs.formatLine(crsObj()),
+        "KML is WGS 84. NAD83 geographic positions are plotted as-is with no silent datum shift."
+      ].filter(Boolean).join("<br>");
+      return kmlPlacemark(p.name || p.pt, desc, ll, "st-control");
+    }).filter(Boolean);
+    if (!placed) {
+      toast("Set the job state-plane zone and units so north/east can be converted, or import lat/lon.");
+      return;
+    }
+    var crs = FNCrs.formatLine(crsObj());
+    var kml = '<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>Job control</name><description><![CDATA[' +
+      esc("CRS: " + crs) + "<br/>KML is WGS 84. NAD83 geographic positions are plotted as-is with no silent datum shift." +
+      "]]></description>" +
+      '<Style id="st-control"><IconStyle><color>ff00a0ff</color><scale>1.1</scale></IconStyle></Style>' +
+      "<Folder><name>Control</name>" + marks.join("") + "</Folder></Document></kml>";
+    var base = (sanitize(state.header.jobNo || "Job") || "Job") + "_control";
+    if (kind === "kml") {
+      FNPlatform.saveBlob(new Blob([kml], { type: "application/vnd.google-earth.kml+xml" }), base + ".kml");
+      if (skipped) toast("Exported " + placed + " points. " + skipped + " skipped (no lat/lon and no job zone).");
+      return;
+    }
+    try {
+      var zip = new JSZip();
+      zip.file("doc.kml", kml);
+      zip.generateAsync({ type: "blob" }).then(function (blob) {
+        FNPlatform.saveBlob(blob, base + ".kmz");
+        if (skipped) toast("Exported " + placed + " points. " + skipped + " skipped (no lat/lon and no job zone).");
+      });
+    } catch (e) { toast("Could not build the KMZ"); }
+  }
+
+  function photoLogCsv() {
+    var rows = [["filename", "pointNo", "code", "note", "jobNo", "dateTime", "crew", "lat", "lon", "accuracy", "heading", "timestamp"]];
+    (state.events || []).forEach(function (ev) {
+      if (ev.type !== "photo") return;
+      var f = ev.fields || {};
+      rows.push([
+        ev.filename || "", ev.pointNo || "", f.code || ev.code || "", ev.notes || "",
+        state.header.jobNo || "", ev.ts || ev.time || "",
+        [state.header.partyChief, state.header.crew].filter(Boolean).join(" / "),
+        ev.lat || "", ev.lon || "", ev.gpsAccuracy || f.accuracy || "", ev.heading || f.heading || ""
+        , ev.ts || ""
+      ]);
+    });
+    return toCsv(rows);
+  }
+
+  function finishDayName() {
+    var job = sanitize(state.header.jobNo || "JOB") || "JOB";
+    var day = (state.header.date || todayISO()).replace(/-/g, "");
+    var crew = sanitize(state.header.partyChief || state.header.crew || "Crew") || "Crew";
+    return job + "_" + day + "_" + crew;
+  }
+  var FINISH_ITEMS = [
+    { id: "fieldBook", label: "Field book", path: "FieldBook.pdf" },
+    { id: "daily", label: "Daily field report", path: "DailyFieldReport.pdf" },
+    { id: "points", label: "Points CSV", path: "Points.csv" },
+    { id: "control", label: "Control CSV", path: "Control.csv" },
+    { id: "kmz", label: "Google Earth KMZ", path: "Job.kmz" },
+    { id: "photos", label: "Photos + photo log", path: "Photos/" },
+    { id: "level", label: "Level notes", path: "LevelNotes/" },
+    { id: "manholes", label: "Manhole dips", path: "ManholeDips/" },
+    { id: "opus", label: "OPUS summaries", path: "OPUS/" },
+    { id: "safety", label: "Safety / JSA", path: "Safety/JSA.pdf" }
+  ];
+  function finishHas(id) {
+    if (id === "fieldBook") return (state.events || []).length > 0 || !!(state.header.jobNo || state.header.projectTitle || state.header.weather);
+    if (id === "daily") return pkgHasData("daily");
+    if (id === "points") return (state.importedPoints || []).length > 0 || (state.events || []).some(function (e) { return e.type === "point_log" || eventPoint(e); });
+    if (id === "control") return (state.controlList || []).length > 0;
+    if (id === "kmz") return (state.controlList || []).some(function (p) { return pointLonLat(p); }) || (state.events || []).some(function (e) { return eventLonLat(e); }) || (state.importedPoints || []).some(function (p) { return pointLonLat(p); });
+    if (id === "photos") return (state.events || []).some(function (e) { return e.type === "photo" && e.fileId; });
+    if (id === "level") return pkgHasData("level");
+    if (id === "manholes") return pkgHasData("manholes");
+    if (id === "opus") return (state.opusReports || []).length > 0;
+    if (id === "safety") return !!state.jsa;
+    return false;
+  }
+  function openFinishDay() {
+    var key = "finish-toggles-v1:" + (state.header.jobNo || "_");
+    FNIdb.kvGet(key).then(function (saved) {
+      var remembered = (saved && saved.items) || {};
+      openOverlay("Finish Day", finishDayName() + ".zip");
+      var html = '<p class="hint">One folder for the office. Items with data are already checked. Turn any off before you build.</p><div class="pkg-list">';
+      FINISH_ITEMS.forEach(function (it) {
+        var has = finishHas(it.id);
+        var checked = has && remembered[it.id] !== false;
+        html += '<label class="pkg-item' + (has ? "" : " unavailable") + '">' +
+          '<input type="checkbox" data-fin="' + it.id + '"' + (checked ? " checked" : "") + (has ? "" : " disabled") + ">" +
+          '<span><span class="lab">' + esc(it.label) + "</span>" +
+          '<span class="sub">' + esc(it.path) + (has ? "" : " \u2014 nothing logged today") + "</span></span></label>";
+      });
+      html += "</div>";
+      $("ovBody").innerHTML = html;
+      $("ovFoot").innerHTML = '<button type="button" class="btn btn-primary" id="finGo">Build ' + esc(finishDayName()) + ".zip</button>";
+      $("finGo").onclick = function () {
+        var selected = {};
+        FINISH_ITEMS.forEach(function (it) {
+          var box = document.querySelector('[data-fin="' + it.id + '"]');
+          selected[it.id] = !!(box && box.checked && !box.disabled);
+        });
+        if (!Object.keys(selected).some(function (k) { return selected[k]; })) { toast("Select at least one item that has data"); return; }
+        FNIdb.kvSet(key, { items: selected, savedAt: new Date().toISOString() });
+        closeOverlay();
+        buildFinishPackage(selected);
+      };
+    });
+  }
+
+  function blobToU8(blob) {
+    return new Promise(function (resolve) {
+      var r = new FileReader();
+      r.onload = function () { resolve(new Uint8Array(r.result)); };
+      r.readAsArrayBuffer(blob);
+    });
+  }
+  function dataUrlToJpegU8(dataUrl) {
+    return new Promise(function (resolve) {
+      if (!dataUrl) { resolve(null); return; }
+      if (/^data:image\/jpeg/i.test(dataUrl)) { resolve(FNPdf.fromDataUrl(dataUrl)); return; }
+      var img = new Image();
+      img.onload = function () {
+        var c = document.createElement("canvas");
+        c.width = img.naturalWidth || img.width;
+        c.height = img.naturalHeight || img.height;
+        var ctx = c.getContext("2d");
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, c.width, c.height);
+        ctx.drawImage(img, 0, 0);
+        c.toBlob(function (b) { if (!b) { resolve(null); return; } blobToU8(b).then(resolve); }, "image/jpeg", 0.92);
+      };
+      img.onerror = function () { resolve(null); };
+      img.src = dataUrl;
+    });
+  }
+
+  function pdfFieldBook() {
+    var doc = new FNPdf.Doc("Field Book");
+    var h = state.header || {};
+    doc.heading("Field Book");
+    doc.para([h.projectTitle || h.jobName || "Field notes", h.jobNo ? "Job " + h.jobNo : "", h.date || "", h.weather || "", formatPointRangeLine(), "CRS: " + FNCrs.formatLine(crsObj())].filter(Boolean).join("  |  "), true);
+    doc.gap(6);
+    var evs = (state.events || []).slice().sort(function (a, b) { return String(eventTime(a)).localeCompare(String(eventTime(b))); });
+    if (!evs.length) doc.para("No entries were logged this day.");
+    evs.forEach(function (ev) {
+      var line = typeLabel(ev.type) + "  " + (ev.time || "") + (eventPoint(ev) ? "  Pt " + eventPoint(ev) : "") + (ev.status ? "  " + ev.status : "");
+      doc.para(line, true);
+      if (ev.type === "gnss_base" && gnssSummary(ev)) doc.para(gnssSummary(ev));
+      if (ev.notes) doc.para(ev.notes);
+      if (ev.filename) doc.para("File " + ev.filename);
+    });
+    return doc.blob();
+  }
+  function pdfDaily() {
+    var doc = new FNPdf.Doc("Daily Field Report");
+    var d = ensureDaily();
+    var L = dailyLabels();
+    doc.heading(L.title || "Daily Field Report");
+    doc.table([
+      ["Project", d.projectName || state.header.projectTitle || "", "Job", d.jobNumber || state.header.jobNo || ""],
+      ["Date performed", d.datePerformed || state.header.date || "", "Client", d.client || ""],
+      ["Work ordered by", d.workOrderedBy || "", "Received by", d.receivedBy || ""]
+    ]);
+    doc.gap(4);
+    doc.para(formatPointRangeLine());
+    doc.heading("Detailed work");
+    doc.para(d.detailedWork || "No detailed work was entered.");
+    return doc.blob();
+  }
+  function pdfLevel() {
+    var doc = new FNPdf.Doc("Level Notes");
+    var calc = levelCompute();
+    doc.heading("Level Notes");
+    doc.para([state.header.jobNo, state.header.date, state.level && state.level.loopName].filter(Boolean).join("  |  "));
+    var rows = [["Kind", "Sta", "BS", "HI", "FS", "Elev", "Notes"]];
+    (state.level.rows || []).forEach(function (r, i) {
+      var c = calc.computed[i] || {};
+      rows.push([r.kind, r.sta, r.bs, fmt3(c.hi), r.fs, r.kind === "BM" ? r.knownElev : fmt3(c.elev), r.notes]);
+    });
+    doc.table(rows);
+    doc.para("Misclosure " + fmt3(calc.misclosure) + "   Closure " + calc.status);
+    return doc.blob();
+  }
+  function pdfOpus(sol) {
+    var doc = new FNPdf.Doc("OPUS summary");
+    doc.heading("OPUS summary");
+    (FNOpus.summaryFields(sol) || []).forEach(function (f) { doc.para(f.label + ": " + f.value); });
+    if (sol.quality) {
+      doc.gap(4);
+      doc.para("Flags: " + sol.quality.overall, true);
+      (sol.quality.rows || []).forEach(function (r) {
+        doc.para((r.pass === false ? "FLAG  " : "") + r.label + "  " + r.value + (r.note ? " -- " + r.note : ""));
+      });
+    }
+    return doc.blob();
+  }
+
+  function buildFinishPackage(selected) {
+    if (typeof JSZip === "undefined") { toast("JSZip is not available"); return; }
+    if (typeof FNPdf === "undefined") { toast("PDF writer is not available"); return; }
+    var zip = new JSZip();
+    var root = finishDayName() + "/";
+    var files = [];
+    function add(path, data) { zip.file(root + path, data); files.push(path); }
+    toast("Building " + finishDayName() + ".zip\u2026");
+    var chain = Promise.resolve();
+    if (selected.fieldBook) add("FieldBook.pdf", pdfFieldBook());
+    if (selected.daily) add("DailyFieldReport.pdf", pdfDaily());
+    if (selected.points) {
+      var pts = (state.importedPoints || []).slice();
+      (state.events || []).forEach(function (ev) {
+        if (ev.type === "point_log" || ev.type === "topo") {
+          var f = ev.fields || {};
+          pts.push({ name: ev.pointNo, n: f.n, e: f.e, z: f.z || f.elev, desc: ev.notes, lat: ev.lat, lon: ev.lon, sourceFile: ev.importedFrom || "log" });
+        }
+      });
+      add("Points.csv", pointsCsv(pts));
+    }
+    if (selected.control) add("Control.csv", pointsCsv(state.controlList));
+    if (selected.level) {
+      add("LevelNotes/LevelNotes.pdf", pdfLevel());
+      add("LevelNotes/LevelNotes.csv", levelCsv());
+    }
+    if (selected.opus) {
+      (state.opusReports || []).forEach(function (sol, i) {
+        var tag = sanitize((sol.rinex || "opus") + "-" + (i + 1)) || ("opus-" + (i + 1));
+        add("OPUS/" + tag + ".txt", FNOpus.toText(sol));
+        add("OPUS/" + tag + ".csv", FNOpus.toCsv(sol));
+        add("OPUS/" + tag + ".pdf", pdfOpus(sol));
+      });
+    }
+    if (selected.kmz) {
+      chain = chain.then(function () { return buildJobKmzBlob(); }).then(function (blob) { if (blob) add("Job.kmz", blob); });
+    }
+    if (selected.photos) {
+      add("Photos/PhotoLog.csv", photoLogCsv());
+      (state.events || []).forEach(function (ev) {
+        if (ev.type !== "photo" || !ev.fileId) return;
+        chain = chain.then(function () {
+          return FNIdb.fileGet(ev.fileId).then(function (rec) {
+            if (!rec || !rec.blob) return;
+            add("Photos/" + (ev.filename || (eventPoint(ev) || ev.id) + ".jpg"), rec.blob);
+          });
+        });
+      });
+    }
+    if (selected.manholes) {
+      chain = chain.then(function () { return pdfManholes().then(function (blob) { add("ManholeDips/ManholeDips.pdf", blob); }); });
+    }
+    if (selected.safety && state.jsa) {
+      chain = chain.then(function () { return pdfSafety().then(function (blob) { add("Safety/JSA.pdf", blob); }); });
+    }
+    chain.then(function () {
+      var manifest = "Field Notes package\n" + finishDayName() + "\n" +
+        (state.header.date || todayISO()) + "\n" +
+        formatPointRangeLine() + "\n" +
+        "CRS: " + FNCrs.formatLine(crsObj()) + "\n\nFiles:\n" + files.join("\n") + "\n";
+      add("manifest.txt", manifest);
+      return zip.generateAsync({ type: "blob" });
+    }).then(function (blob) {
+      return FNPlatform.saveBlob(blob, finishDayName() + ".zip");
+    }).then(function () { toast("Saved " + finishDayName() + ".zip"); })
+      .catch(function () { toast("Could not build the package"); });
+  }
+
+  function buildJobKmzBlob() {
+    var zip;
+    try { zip = new JSZip(); } catch (e) { return Promise.resolve(null); }
+    var hrefs = {};
+    var chain = Promise.resolve();
+    (state.events || []).forEach(function (ev) {
+      if (ev.type !== "photo" || !ev.fileId) return;
+      chain = chain.then(function () {
+        return FNIdb.fileGet(ev.fileId).then(function (rec) {
+          if (!rec || !rec.blob) return;
+          var name = ev.filename || (eventPoint(ev) || ev.id) + ".jpg";
+          hrefs[name] = "files/" + name;
+          zip.file("files/" + name, rec.blob);
+        });
+      });
+    });
+    return chain.then(function () {
+      zip.file("doc.kml", buildKml(hrefs));
+      return zip.generateAsync({ type: "blob" });
+    });
+  }
+
+  function pdfSafety() {
+    var doc = new FNPdf.Doc("Job Safety Analysis");
+    var j = state.jsa || {};
+    var labels = (profile && profile.jsa) || {};
+    doc.heading(labels.title || "JOB SAFETY ANALYSIS");
+    doc.para("Date " + (state.header.date || "") + "   Job " + (state.header.jobNo || "") + "   " + (state.header.projectTitle || state.header.jobName || ""));
+    doc.para("Task: " + (j.task || "") + "    Location: " + (j.location || ""));
+    doc.para("Hospital: " + selectedHospitalLabel());
+    if (j.comments) doc.para("Comments: " + j.comments);
+    var chain = Promise.resolve();
+    (j.signers || []).forEach(function (s) {
+      chain = chain.then(function () {
+        doc.para((s.name || "Signer") + (s.ts ? "  " + s.ts : ""), true);
+        if (s.sigDataUrl) {
+          return dataUrlToJpegU8(s.sigDataUrl).then(function (u8) { if (u8) doc.imageJpeg(u8, 200); });
+        }
+      });
+    });
+    return chain.then(function () { return doc.blob(); });
+  }
+  function pdfManholes() {
+    var doc = new FNPdf.Doc("Manhole Dips");
+    var sheet = ensureManholes();
+    doc.heading("Manhole Dips");
+    doc.para([sheet.jobName, sheet.jobNo, state.header.date].filter(Boolean).join("  |  "));
+    (sheet.holes || []).forEach(function (hole, i) {
+      doc.para("Manhole " + (i + 1) + "  Point " + (hole.pointNo || ""), true);
+      doc.para([hole.desc1, hole.desc2, hole.rimElev ? "Rim " + hole.rimElev : ""].filter(Boolean).join("  |  "));
+      var rows = [["Dir", "Size", "Inv", "Dip", "Notes"]];
+      (hole.pipes || []).forEach(function (r) { rows.push([r.pt || r.dir || "", r.size || "", r.ie || "", r.dip || "", r.notes || ""]); });
+      if (rows.length > 1) doc.table(rows);
+    });
+    return Promise.resolve(doc.blob());
+  }
+
+
+    function bindUi() {
     if ($("btnBack")) $("btnBack").addEventListener("click", function () { showView("menu"); });
     document.querySelectorAll("[data-view]").forEach(function (btn) {
       btn.addEventListener("click", function () { showView(btn.getAttribute("data-view")); });
@@ -2912,7 +3493,12 @@
       scheduleSave(); renderManholes();
     });
     if ($("btnEarth")) $("btnEarth").addEventListener("click", exportEarth);
-    if ($("btnPackage")) $("btnPackage").addEventListener("click", openPackageWizard);
+    if ($("btnPackage")) $("btnPackage").addEventListener("click", openFinishDay);
+    if ($("btnFinishDay")) $("btnFinishDay").addEventListener("click", openFinishDay);
+    if ($("currentPoint")) {
+      $("currentPoint").addEventListener("change", function () { setCurrentPoint($("currentPoint").value); });
+      $("currentPoint").addEventListener("blur", function () { setCurrentPoint($("currentPoint").value); });
+    }
     if ($("btnCsv")) $("btnCsv").addEventListener("click", downloadCsv);
     if ($("btnImportControl")) $("btnImportControl").addEventListener("click", function () { $("controlInput").click(); });
     if ($("btnImportPoints")) $("btnImportPoints").addEventListener("click", function () { $("pointsInput").click(); });

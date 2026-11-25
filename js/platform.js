@@ -25,6 +25,8 @@
             lat: pos.coords.latitude,
             lon: pos.coords.longitude,
             accuracy: pos.coords.accuracy,
+            heading: (pos.coords.heading != null && isFinite(pos.coords.heading) && pos.coords.heading >= 0) ? pos.coords.heading : null,
+            altitude: pos.coords.altitude,
             ts: pos.timestamp
           });
         },
@@ -84,6 +86,8 @@
           lat: pos.coords.latitude,
           lon: pos.coords.longitude,
           accuracy: pos.coords.accuracy,
+          heading: (pos.coords.heading != null && isFinite(pos.coords.heading) && pos.coords.heading >= 0) ? pos.coords.heading : null,
+          altitude: pos.coords.altitude,
           ts: pos.timestamp
         });
       },
