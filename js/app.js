@@ -2289,7 +2289,7 @@
         }
       }
       if (ev.filename) body += "<div>File " + esc(ev.filename) + "</div>";
-      if (ev.type === "sketch") body += '<div class="muted">Legend: Control point; Monument found; Monument set; Benchmark; Iron pipe / rebar; Nail / tag; Existing pole; New pole; Tree; Utility box / vault; Miscellaneous; Line and Circle (solid or dashed). The saved PNG includes this legend.</div>';
+      if (ev.type === "sketch") body += '<div class="muted">Legend: Control point; Monument found; Monument set; Existing pole; New pole; Tree; Utility box / vault; SD manhole; SS manhole; WT manhole; Miscellaneous; Line and Circle (solid or dashed). The saved PNG includes this legend.</div>';
       if (ev.warnOutside || ev.warnDuplicate) body += '<div class="muted">Point-number warning on this entry.</div>';
       if (ev.importedFrom) body += '<div class="muted">Imported from ' + esc(ev.importedFrom) + "</div>";
       body += "</div>";
@@ -2619,22 +2619,22 @@
     { id: "control", label: "Control point" },
     { id: "monFound", label: "Monument found" },
     { id: "monSet", label: "Monument set" },
-    { id: "benchmark", label: "Benchmark" },
-    { id: "ip", label: "Iron pipe / rebar" },
-    { id: "nail", label: "Nail / tag" },
     { id: "poleExist", label: "Existing pole" },
     { id: "poleNew", label: "New pole" },
     { id: "tree", label: "Tree" },
     { id: "vault", label: "Utility box / vault" },
+    { id: "mhSD", label: "SD manhole" },
+    { id: "mhSS", label: "SS manhole" },
+    { id: "mhWT", label: "WT manhole" },
     { id: "misc", label: "Miscellaneous" }
   ];
   function sketchSetStroke(ctx, dashed, width) {
     ctx.strokeStyle = "#111";
     ctx.fillStyle = "#111";
-    ctx.lineWidth = width || 2.4;
+    ctx.lineWidth = width || 1.2;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    ctx.setLineDash(dashed ? [9, 7] : []);
+    ctx.setLineDash(dashed ? [6, 5] : []);
   }
   function drawSketchSymbol(ctx, kind, x, y, s, label) {
     s = s || 16;
@@ -2642,7 +2642,7 @@
     ctx.translate(x, y);
     ctx.strokeStyle = "#111";
     ctx.fillStyle = "#111";
-    ctx.lineWidth = Math.max(1.6, s * 0.14);
+    ctx.lineWidth = Math.max(0.9, s * 0.08);
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.setLineDash([]);
@@ -2668,7 +2668,17 @@
     }
     if (kind === "control") { tri(false); dot(s * 0.2); }
     else if (kind === "monFound") { circ(false, s); dot(s * 0.22); }
-    else if (kind === "monSet") { circ(true, s * 0.85); }
+    else if (kind === "monSet") {
+      circ(true, s * 0.85);
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = Math.max(1.1, s * 0.14);
+      var arm = s * 0.48;
+      ctx.beginPath();
+      ctx.moveTo(-arm, 0); ctx.lineTo(arm, 0);
+      ctx.moveTo(0, -arm); ctx.lineTo(0, arm);
+      ctx.stroke();
+      ctx.strokeStyle = "#111";
+    }
     else if (kind === "benchmark") {
       tri(false);
       ctx.beginPath();
@@ -2689,12 +2699,18 @@
       ctx.moveTo(-s * 0.7, -s * 0.7); ctx.lineTo(s * 0.7, s * 0.7);
       ctx.moveTo(s * 0.7, -s * 0.7); ctx.lineTo(-s * 0.7, s * 0.7);
       ctx.stroke();
-    } else if (kind === "poleExist" || kind === "poleNew") {
-      ctx.beginPath();
-      ctx.moveTo(0, 0); ctx.lineTo(0, -s * 1.55);
-      ctx.stroke();
-      circ(kind === "poleExist", s * 0.7);
-    } else if (kind === "tree") {
+    } else if (kind === "poleExist") { circ(true, s * 0.85); }
+    else if (kind === "poleNew") { circ(false, s * 0.85); }
+    else if (kind === "mhSD" || kind === "mhSS" || kind === "mhWT") {
+      circ(false, s);
+      var letters = kind === "mhSD" ? "SD" : (kind === "mhSS" ? "SS" : "WT");
+      ctx.font = "bold " + Math.max(7, Math.round(s * 0.72)) + "px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "#111";
+      ctx.fillText(letters, 0, s * 0.04);
+    }
+    else if (kind === "tree") {
       circ(false, s * 0.85);
       for (var i = 0; i < 7; i++) {
         var a = (i / 7) * Math.PI * 2 - Math.PI / 2;
@@ -2743,7 +2759,7 @@
         ctx.strokeStyle = "rgba(0,0,0,1)";
         ctx.lineWidth = obj.width || 16;
       } else {
-        sketchSetStroke(ctx, false, obj.width || 2.4);
+        sketchSetStroke(ctx, false, obj.width || 1.2);
       }
       ctx.beginPath();
       ctx.moveTo(pts[0].x, pts[0].y);
@@ -2754,7 +2770,7 @@
       return;
     }
     if (obj.type === "line") {
-      sketchSetStroke(ctx, !!obj.dashed, 2.6);
+      sketchSetStroke(ctx, !!obj.dashed, 1.3);
       ctx.beginPath();
       ctx.moveTo(obj.x1, obj.y1);
       ctx.lineTo(obj.x2, obj.y2);
@@ -2764,7 +2780,7 @@
     }
     if (obj.type === "circle") {
       var r = Math.max(0, obj.r || 0);
-      sketchSetStroke(ctx, !!obj.dashed, 2.6);
+      sketchSetStroke(ctx, !!obj.dashed, 1.3);
       ctx.beginPath();
       ctx.arc(obj.x, obj.y, r, 0, Math.PI * 2);
       ctx.stroke();
@@ -2819,14 +2835,14 @@
       var cx = x + 8 + c * cellW + 12;
       var cy = top + r * rowH + 10;
       if (it.kind === "lineSolid" || it.kind === "lineDash") {
-        sketchSetStroke(ctx, it.kind === "lineDash", 2);
+        sketchSetStroke(ctx, it.kind === "lineDash", 1.2);
         ctx.beginPath();
         ctx.moveTo(cx - 10, cy);
         ctx.lineTo(cx + 10, cy);
         ctx.stroke();
         ctx.setLineDash([]);
       } else if (it.kind === "circSolid" || it.kind === "circDash") {
-        sketchSetStroke(ctx, it.kind === "circDash", 2);
+        sketchSetStroke(ctx, it.kind === "circDash", 1.2);
         ctx.beginPath();
         ctx.arc(cx, cy, 7, 0, Math.PI * 2);
         ctx.stroke();
@@ -2890,7 +2906,7 @@
       '<button type="button" class="btn" id="skPromptOk">Add</button>' +
       '<button type="button" class="btn" id="skPromptSkip">Skip</button></div>' +
       '<canvas id="sketchPad" width="800" height="560"></canvas>' +
-      '<p class="hint">Tap or drag with a finger or mouse. Symbols get an optional point number. A legend is added when you save or export.</p>';
+      '<p class="hint">Tap or drag with a finger or mouse. A faint preview follows the pointer. Symbols get an optional point number. A legend is added when you save or export.</p>';
     $("ovFoot").innerHTML = '<button type="button" class="btn btn-primary" id="skSave">Save sketch</button>';
     var canvas = $("sketchPad");
     var ctx = canvas.getContext("2d");
@@ -2900,7 +2916,9 @@
     var dashed = false;
     var symbolKind = "";
     var drawing = false;
+    var placing = false;
     var current = null;
+    var hover = null;
     var pending = null;
     document.querySelectorAll("[data-skico]").forEach(function (el) {
       el.appendChild(renderSketchIcon(el.getAttribute("data-skico"), 64));
@@ -2914,7 +2932,12 @@
       document.querySelectorAll("[data-sksym]").forEach(function (b) {
         b.classList.toggle("on", tool === "symbol" && b.getAttribute("data-sksym") === symbolKind);
       });
-      canvas.style.cursor = (tool === "text" || tool === "symbol") ? "cell" : "crosshair";
+      hover = null;
+      placing = false;
+      if (tool === "symbol") canvas.style.cursor = "none";
+      else if (tool === "text") canvas.style.cursor = "cell";
+      else canvas.style.cursor = "crosshair";
+      if (typeof redraw === "function") redraw();
     }
     function setDashed(on) {
       dashed = !!on;
@@ -2931,7 +2954,17 @@
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       if (baseImage) ctx.drawImage(baseImage, 0, 0, canvas.width, canvas.height);
       objects.forEach(function (o) { drawSketchObject(ctx, o); });
-      if (current) drawSketchObject(ctx, current);
+      function ghost(obj) {
+        if (!obj) return;
+        ctx.save();
+        ctx.globalAlpha = 0.55;
+        ctx.globalCompositeOperation = "source-over";
+        drawSketchObject(ctx, obj);
+        ctx.restore();
+      }
+      if (current && (current.type === "line" || current.type === "circle" || current.type === "symbol")) ghost(current);
+      else if (current) drawSketchObject(ctx, current);
+      if (hover) ghost(hover);
       ctx.restore();
     }
     function pos(e) {
@@ -2973,12 +3006,34 @@
       hidePrompt();
       redraw();
     };
+    function symbolGhostAt(p) {
+      return { type: "symbol", kind: symbolKind, x: p.x, y: p.y, size: 18, label: "" };
+    }
+    function placeSymbolAt(p) {
+      placing = false;
+      drawing = false;
+      hover = null;
+      current = null;
+      if (!p || !symbolKind) { redraw(); return; }
+      var s = { type: "symbol", kind: symbolKind, x: p.x, y: p.y, size: 18, label: "" };
+      objects.push(s);
+      redraw();
+      askLabel(s, "Point # (optional)", false);
+    }
     canvas.addEventListener("pointerdown", function (e) {
       if (e.button != null && e.button !== 0) return;
       if (pending) return;
       e.preventDefault();
       try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
       var p = pos(e);
+      if (tool === "symbol" && symbolKind) {
+        placing = true;
+        drawing = true;
+        current = null;
+        hover = symbolGhostAt(p);
+        redraw();
+        return;
+      }
       drawing = true;
       if (tool === "freehand") current = { type: "stroke", points: [p] };
       else if (tool === "eraser") current = { type: "erase", width: 18, points: [p] };
@@ -2987,25 +3042,26 @@
       else if (tool === "text") {
         drawing = false;
         current = null;
-        var t = { type: "text", x: p.x, y: p.y, text: "" };
-        objects.push(t);
-        askLabel(t, "Text label", true);
-        return;
-      } else if (tool === "symbol" && symbolKind) {
-        drawing = false;
-        current = null;
-        var s = { type: "symbol", kind: symbolKind, x: p.x, y: p.y, size: 18, label: "" };
-        objects.push(s);
-        redraw();
-        askLabel(s, "Point # (optional)", false);
+        var txt = { type: "text", x: p.x, y: p.y, text: "" };
+        objects.push(txt);
+        askLabel(txt, "Text label", true);
         return;
       }
       redraw();
     });
     canvas.addEventListener("pointermove", function (e) {
-      if (!drawing || !current) return;
-      e.preventDefault();
       var p = pos(e);
+      if (tool === "symbol" && symbolKind && !pending) {
+        e.preventDefault();
+        hover = symbolGhostAt(p);
+        redraw();
+        return;
+      }
+      if (!drawing || !current) {
+        if (hover) { hover = null; redraw(); }
+        return;
+      }
+      e.preventDefault();
       if (current.type === "stroke" || current.type === "erase") current.points.push(p);
       else if (current.type === "line") { current.x2 = p.x; current.y2 = p.y; }
       else if (current.type === "circle") {
@@ -3016,6 +3072,11 @@
     });
     function endDraw(e) {
       if (e) e.preventDefault();
+      if (placing) {
+        var p = e ? pos(e) : (hover ? { x: hover.x, y: hover.y } : null);
+        placeSymbolAt(p);
+        return;
+      }
       if (!drawing) return;
       drawing = false;
       if (!current) return;
@@ -3030,12 +3091,26 @@
       }
       if (keep) objects.push(current);
       current = null;
+      hover = null;
       redraw();
     }
     canvas.addEventListener("pointerup", endDraw);
-    canvas.addEventListener("pointercancel", endDraw);
+    canvas.addEventListener("pointercancel", function (e) {
+      if (e) e.preventDefault();
+      if (placing) {
+        placing = false;
+        drawing = false;
+        hover = null;
+        current = null;
+        redraw();
+        return;
+      }
+      endDraw(e);
+    });
     canvas.addEventListener("pointerleave", function (e) {
+      if (placing) return;
       if (drawing && (e.buttons === 0 || e.buttons == null)) endDraw(e);
+      else if (!drawing && hover) { hover = null; redraw(); }
     });
     document.querySelectorAll("[data-sktool]").forEach(function (b) {
       b.addEventListener("click", function () { hidePrompt(); setTool(b.getAttribute("data-sktool")); });
@@ -3048,12 +3123,18 @@
     });
     $("skUndo").onclick = function () {
       hidePrompt();
+      hover = null;
+      current = null;
+      placing = false;
       if (!objects.length) { toast("Nothing to undo"); return; }
       objects.pop();
       redraw();
     };
     $("skClear").onclick = function () {
       hidePrompt();
+      hover = null;
+      current = null;
+      placing = false;
       objects = [];
       baseImage = null;
       redraw();
@@ -3079,6 +3160,8 @@
     function exportWithLegend() {
       return new Promise(function (resolve) {
         current = null;
+        hover = null;
+        placing = false;
         redraw();
         var legendH = 132;
         var out = document.createElement("canvas");
@@ -3622,7 +3705,7 @@
     });
   }
 
-  var SKETCH_LEGEND_LINE = "Legend: Control point; Monument found; Monument set; Benchmark; Iron pipe / rebar; Nail / tag; Existing pole (filled circle on a post); New pole (open circle on a post); Tree; Utility box / vault; Miscellaneous; Line and Circle (solid or dashed).";
+  var SKETCH_LEGEND_LINE = "Legend: Control point; Monument found (circle with a dot); Monument set (filled circle with a cross); Existing pole (filled circle); New pole (open circle); Tree; Utility box / vault; SD manhole (storm drain); SS manhole (sewer); WT manhole (water); Miscellaneous; Line and Circle (solid or dashed).";
   function pdfFieldBook() {
     var doc = new FNPdf.Doc("Field Book");
     var h = state.header || {};
