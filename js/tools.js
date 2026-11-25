@@ -228,8 +228,8 @@
       '<p class="hint">Enter any two of horizontal distance, slope, and change in elevation to solve the third. Slope is percent (2 or 2%) or a ratio H:V (50:1).</p><div class="grid g2">' +
       fld("uGDist", "Horizontal distance (ft)", { dec: true }) +
       fld("uGSlope", "Slope (% or ratio H:V)", { ph: "e.g. 2, 2%, or 50:1" }) +
-      fld("uGElev", "Change in elevation (ft)", { dec: true }) +
       fld("uGStart", "Start elevation (ft, optional)", { dec: true }) +
+      fld("uGElev", "Change in elevation (ft)", { dec: true }) +
       "</div>" + resultBox('<p class="hint">Enter any two values.</p>', 'uGSolveBox') + "</div>";
   }
   function bindUnits() {
