@@ -456,3 +456,11 @@ input::placeholder { color: #8a887e; opacity: 1; }
   background: var(--paper-2, #f7f4ec);
   border-radius: 10px;
 }
+
+.guided-lead { font-size: 15px; margin: 0 0 12px; }
+.guided-step { font-size: 13px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin: 0 0 4px; }
+.guided-title { font-size: 26px; line-height: 1.2; margin: 0 0 8px; }
+.guided-hint { font-size: 15px; margin: 0 0 12px; }
+.guided-preview { margin: 0 0 12px; background: #111; border-radius: 10px; min-height: 120px; overflow: hidden; }
+.guided-preview img { width: 100%; display: block; max-height: 52vh; object-fit: contain; background: #111; }
+.guided-actions .btn { min-height: 48px; }

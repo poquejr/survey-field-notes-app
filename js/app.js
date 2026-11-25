@@ -334,7 +334,7 @@
     profile = pr;
     return FNIdb.kvSet(PROFILE_KEY, pr).then(function () { return FNIdb.kvSet(ACTIVE_KEY, pr.id || ""); });
   }
-  function closeOverlay() { $("overlay").classList.add("hidden"); $("ovBody").innerHTML = ""; $("ovFoot").innerHTML = ""; photoDraft = null; }
+  function closeOverlay() { $("overlay").classList.add("hidden"); $("ovBody").innerHTML = ""; $("ovFoot").innerHTML = ""; photoDraft = null; guidedDraft = null; }
   function openOverlay(title, step) {
     $("ovTitle").textContent = title || "Entry";
     $("ovStep").textContent = step || "";
@@ -564,7 +564,7 @@
       var st = ev.status ? '<span class="badge ' + esc(ev.status) + '">' + esc(ev.status) + "</span>" : "";
       var src = ev.importedFrom ? '<span class="hint">imported from ' + esc(ev.importedFrom) + "</span>" : "";
       var detail = ev.type === "gnss_base" ? gnssSummary(ev) : "";
-      return '<article class="event" data-eid="' + esc(ev.id) + '"><header><strong>' + esc(typeLabel(ev.type)) + "</strong>" +
+      return '<article class="event" data-eid="' + esc(ev.id) + '"><header><strong>' + esc(eventLabel(ev)) + "</strong>" +
         (pt ? " · pt " + esc(pt) : "") + " " + st +
         '<span class="when">' + esc(ev.time || "") + '</span></header>' +
         (detail ? "<p>" + esc(detail) + "</p>" : "") +
@@ -912,44 +912,494 @@
   function watermarkFields() {
     return (profile && profile.photo && profile.photo.watermarkFields) || ["jobNo","dateTime","pointNo","code","gps","heading","crew","note"];
   }
-  function drawWatermark(img, meta) {
-    var canvas = document.createElement("canvas");
-    canvas.width = img.naturalWidth || img.width;
-    canvas.height = img.naturalHeight || img.height;
-    var ctx = canvas.getContext("2d");
-    ctx.drawImage(img, 0, 0);
+  function watermarkLines(meta, opts) {
+    opts = opts || {};
     var lines = [];
     var fields = watermarkFields();
-    function want(k) { return !fields.length || fields.indexOf(k) >= 0; }
+    function want(k) { return opts.force || !fields.length || fields.indexOf(k) >= 0; }
     if (want("jobNo") && meta.jobNo) lines.push("Job " + meta.jobNo);
     if (want("dateTime") && meta.dateTime) lines.push(meta.dateTime);
-    if (want("pointNo") && meta.pointNo) lines.push("Pt " + meta.pointNo);
-    if (want("code") && meta.code) lines.push(meta.code);
-    if (want("description") && meta.description && meta.description !== meta.code) lines.push(meta.description);
+    if ((want("pointNo") || opts.annotate) && meta.pointNo) lines.push("Pt " + meta.pointNo);
+    if ((want("code") || opts.annotate) && meta.code) lines.push(meta.code);
+    if ((want("description") || opts.annotate) && meta.description && meta.description !== meta.code) lines.push(meta.description);
     if (want("gps") && meta.gps) lines.push(meta.gps);
     if (want("heading") && meta.heading) lines.push("Hdg " + meta.heading);
     if (want("crew") && meta.crew) lines.push(meta.crew);
-    if (want("note") && meta.note) lines.push(meta.note);
-    if (!lines.length) {
-      return new Promise(function (resolve) { canvas.toBlob(function (b) { resolve({ blob: b, dataUrl: canvas.toDataURL("image/jpeg", 0.92) }); }, "image/jpeg", 0.92); });
-    }
-    var pad = Math.max(12, Math.round(canvas.width * 0.012));
-    var fontSize = Math.max(16, Math.round(canvas.width * 0.028));
+    if ((want("note") || opts.annotate) && meta.note) lines.push(meta.note);
+    return lines;
+  }
+  function stampWatermark(ctx, w, h, meta, opts) {
+    var lines = watermarkLines(meta, opts);
+    if (!lines.length) return 0;
+    var pad = Math.max(12, Math.round(w * 0.012));
+    var fontSize = Math.max(16, Math.round(w * 0.028));
     ctx.font = "bold " + fontSize + "px sans-serif";
     ctx.textBaseline = "bottom";
     var lineH = fontSize + 6;
     var boxH = lineH * lines.length + pad;
     ctx.fillStyle = "rgba(0,0,0,0.55)";
-    ctx.fillRect(0, canvas.height - boxH, canvas.width, boxH);
+    ctx.fillRect(0, h - boxH, w, boxH);
     ctx.fillStyle = "#fff";
     lines.forEach(function (line, i) {
-      ctx.fillText(line, pad, canvas.height - boxH + pad / 2 + lineH * (i + 1) - 4, canvas.width - pad * 2);
+      ctx.fillText(line, pad, h - boxH + pad / 2 + lineH * (i + 1) - 4, w - pad * 2);
     });
+    return boxH;
+  }
+  function watermarkBarHeight(w, meta, opts) {
+    var lines = watermarkLines(meta, opts);
+    if (!lines.length) return 0;
+    var pad = Math.max(12, Math.round(w * 0.012));
+    var fontSize = Math.max(16, Math.round(w * 0.028));
+    return (fontSize + 6) * lines.length + pad;
+  }
+  function canvasToJpeg(canvas) {
     return new Promise(function (resolve) {
       canvas.toBlob(function (b) { resolve({ blob: b, dataUrl: canvas.toDataURL("image/jpeg", 0.92) }); }, "image/jpeg", 0.92);
     });
   }
+  function drawWatermark(img, meta, opts) {
+    var canvas = document.createElement("canvas");
+    canvas.width = img.naturalWidth || img.width;
+    canvas.height = img.naturalHeight || img.height;
+    var ctx = canvas.getContext("2d");
+    ctx.drawImage(img, 0, 0);
+    stampWatermark(ctx, canvas.width, canvas.height, meta, opts);
+    return canvasToJpeg(canvas);
+  }
+  function wrapTextLines(ctx, text, maxW) {
+    var words = String(text || "").split(/\s+/).filter(Boolean);
+    var lines = [], cur = "";
+    words.forEach(function (word) {
+      var trial = cur ? cur + " " + word : word;
+      if (ctx.measureText(trial).width > maxW && cur) { lines.push(cur); cur = word; }
+      else cur = trial;
+    });
+    if (cur) lines.push(cur);
+    return lines.slice(0, 8);
+  }
+  function drawCoverImage(ctx, img, dx, dy, dw, dh) {
+    var iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+    if (!iw || !ih) return;
+    var scale = Math.max(dw / iw, dh / ih);
+    var sw = dw / scale, sh = dh / scale;
+    var sx = (iw - sw) / 2, sy = (ih - sh) / 2;
+    ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
+  }
+  function drawInsetRect(ctx, img, w, h, shape) {
+    if (!img) return;
+    var margin = Math.max(12, Math.round(w * 0.02));
+    var insetW, insetH;
+    if (shape === "portrait") {
+      insetW = Math.round(Math.min(w * 0.28, h * 0.36 * 0.75));
+      insetH = Math.round(insetW / 0.75);
+    } else {
+      insetW = Math.round(Math.min(w * 0.3, h * 0.34));
+      insetH = Math.round(insetW * 0.85);
+    }
+    if (insetH > h * 0.42) {
+      insetH = Math.round(h * 0.42);
+      insetW = Math.round(shape === "portrait" ? insetH * 0.75 : insetH / 0.85);
+    }
+    var x = margin, y = margin;
+    var border = Math.max(4, Math.round(w * 0.006));
+    ctx.fillStyle = "#111";
+    ctx.fillRect(x - 2, y - 2, insetW + border * 2 + 4, insetH + border * 2 + 4);
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(x, y, insetW + border * 2, insetH + border * 2);
+    drawCoverImage(ctx, img, x + border, y + border, insetW, insetH);
+  }
+  function drawCommentBox(ctx, w, h, comment, barH) {
+    var text = String(comment || "").trim();
+    if (!text) return;
+    var fontSize = Math.max(16, Math.round(w * 0.026));
+    var pad = Math.max(10, Math.round(w * 0.012));
+    var margin = Math.max(12, Math.round(w * 0.02));
+    var maxW = Math.round(w * 0.38);
+    ctx.font = "bold " + fontSize + "px sans-serif";
+    var lines = wrapTextLines(ctx, text, maxW - pad * 2);
+    var lineH = fontSize + 6;
+    var boxW = maxW;
+    var boxH = lineH * lines.length + pad * 2;
+    var x = w - margin - boxW;
+    var y = h - barH - margin - boxH;
+    if (y < margin) y = margin;
+    ctx.fillStyle = "rgba(0,0,0,0.62)";
+    ctx.fillRect(x, y, boxW, boxH);
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = Math.max(2, Math.round(w * 0.003));
+    ctx.strokeRect(x + 1, y + 1, boxW - 2, boxH - 2);
+    ctx.fillStyle = "#fff";
+    ctx.textBaseline = "top";
+    ctx.font = "bold " + fontSize + "px sans-serif";
+    lines.forEach(function (line, i) {
+      ctx.fillText(line, x + pad, y + pad + lineH * i, boxW - pad * 2);
+    });
+  }
+  function composeGuidedPhoto(baseImg, insetImg, meta, comment, insetShape, opts) {
+    var canvas = document.createElement("canvas");
+    canvas.width = baseImg.naturalWidth || baseImg.width;
+    canvas.height = baseImg.naturalHeight || baseImg.height;
+    var ctx = canvas.getContext("2d");
+    ctx.drawImage(baseImg, 0, 0);
+    if (insetImg) drawInsetRect(ctx, insetImg, canvas.width, canvas.height, insetShape || "portrait");
+    var barH = watermarkBarHeight(canvas.width, meta, opts);
+    drawCommentBox(ctx, canvas.width, canvas.height, comment, barH);
+    stampWatermark(ctx, canvas.width, canvas.height, meta, opts);
+    return canvasToJpeg(canvas);
+  }
+  function loadImage(src) {
+    return new Promise(function (resolve, reject) {
+      var img = new Image();
+      img.onload = function () { resolve(img); };
+      img.onerror = function () { reject(new Error("image")); };
+      img.src = src;
+    });
+  }
+  function photoMetaFromGuided(draft, when) {
+    var gps = "";
+    if (draft.lat && draft.lon) {
+      gps = draft.lat + ", " + draft.lon;
+      if (draft.gpsAccuracy) gps += " \u00b1" + draft.gpsAccuracy + " m";
+    }
+    return {
+      jobNo: state.header.jobNo || "",
+      pointNo: draft.pointNo || "",
+      dateTime: (when || new Date()).toLocaleString(),
+      crew: [state.header.partyChief, state.header.crew].filter(Boolean).join(" \u00b7 "),
+      gps: gps,
+      heading: draft.heading ? draft.heading + "\u00b0" : "",
+      code: draft.description || "",
+      description: draft.description || "",
+      note: draft.notes || ""
+    };
+  }
+  var GUIDED_PHOTO = {
+    pole: {
+      title: "Pole photo",
+      type: "pole",
+      steps: [
+        { id: "tag", title: "Pole TAG close-up", hint: "Fill the frame with the tag so the number is readable.", required: true },
+        { id: "bottom", title: "Pole BOTTOM", hint: "Photograph the bottom of the pole.", required: true },
+        { id: "overall", title: "WHOLE pole (overall)", hint: "Photograph the whole pole. The tag close-up is inset on this picture.", required: true, composite: true, insetFrom: "tag", insetShape: "portrait" }
+      ]
+    },
+    monument: {
+      title: "Monument photo",
+      type: "monument",
+      steps: [
+        { id: "close", title: "CLOSE-UP", hint: "Fill the frame with the monument so marks are readable.", required: true },
+        { id: "distance", title: "FROM DISTANCE", hint: "Photograph the monument from a distance. The close-up is inset on this picture.", required: true, composite: true, insetFrom: "close", insetShape: "rect" },
+        { id: "extra", title: "Extra photo (optional)", hint: "Add one more photo, or skip.", required: false }
+      ]
+    }
+  };
+  var guidedDraft = null;
+  function eventLabel(ev) {
+    var f = (ev && ev.fields) || {};
+    if (ev && ev.type === "photo" && (f.photoMode === "pole" || f.photoMode === "monument")) {
+      var mode = f.photoMode === "pole" ? "Pole photo" : "Monument photo";
+      var part = f.part ? " \u2014 " + f.part : "";
+      return mode + part;
+    }
+    return typeLabel(ev && ev.type);
+  }
+  function guidedNames(pointNo, mode, used) {
+    used = used || usedPhotoNames();
+    var pt = sanitize(pointNo || "pt") || "pt";
+    var steps = GUIDED_PHOTO[mode].steps;
+    var n = 1, names, clash;
+    do {
+      var suffix = n === 1 ? "" : "_" + n;
+      names = {};
+      clash = false;
+      steps.forEach(function (s) {
+        names[s.id] = pt + "_" + s.id + suffix + ".jpg";
+        if (used[names[s.id].toLowerCase()]) clash = true;
+      });
+      n++;
+    } while (clash && n < 200);
+    return names;
+  }
+  function collectGuidedSet(setId) {
+    return (state.events || []).filter(function (e) {
+      return e.type === "photo" && e.fields && e.fields.setId === setId;
+    });
+  }
+  function openGuidedPhoto(mode, existingSetId) {
+    var cfg = GUIDED_PHOTO[mode];
+    if (!cfg) return;
+    var draft = {
+      mode: mode,
+      setId: existingSetId || uid(),
+      pointNo: "",
+      description: "",
+      notes: "",
+      comment: "",
+      time: nowTime(),
+      ts: new Date().toISOString(),
+      stepIndex: -1,
+      shots: {},
+      events: {}
+    };
+    if (existingSetId) {
+      var evs = collectGuidedSet(existingSetId);
+      evs.forEach(function (ev) {
+        var part = ev.fields && ev.fields.part;
+        if (!part) return;
+        draft.events[part] = ev;
+        draft.pointNo = draft.pointNo || ev.pointNo || "";
+        draft.description = draft.description || ev.code || (ev.fields && ev.fields.description) || "";
+        draft.notes = draft.notes || ev.notes || "";
+        if (ev.fields && ev.fields.comment) draft.comment = ev.fields.comment;
+        draft.lat = draft.lat || ev.lat;
+        draft.lon = draft.lon || ev.lon;
+        draft.gpsAccuracy = draft.gpsAccuracy || ev.gpsAccuracy;
+        draft.heading = draft.heading || ev.heading;
+        draft.time = ev.time || draft.time;
+      });
+      var loads = evs.map(function (ev) {
+        var part = ev.fields.part;
+        if (!ev.fileId) return Promise.resolve();
+        return FNIdb.fileGet(ev.fileId).then(function (rec) {
+          if (!rec || !rec.blob) return;
+          return new Promise(function (resolve) {
+            var r = new FileReader();
+            r.onload = function () {
+              draft.shots[part] = { dataUrl: r.result, filename: ev.filename };
+              resolve();
+            };
+            r.readAsDataURL(rec.blob);
+          });
+        });
+      });
+      Promise.all(loads).then(function () {
+        guidedDraft = draft;
+        var firstMissing = 0;
+        cfg.steps.forEach(function (s, i) { if (!draft.shots[s.id] && firstMissing === 0 && i) firstMissing = i; });
+        draft.stepIndex = -1;
+        renderGuidedPhoto();
+      });
+      return;
+    }
+    draft.pointNo = state.currentPoint || "";
+    guidedDraft = draft;
+    renderGuidedPhoto();
+  }
+  function guidedStep() {
+    var cfg = GUIDED_PHOTO[guidedDraft.mode];
+    return cfg.steps[guidedDraft.stepIndex] || null;
+  }
+  function renderGuidedPhoto() {
+    if (!guidedDraft) return;
+    var cfg = GUIDED_PHOTO[guidedDraft.mode];
+    var draft = guidedDraft;
+    if (draft.stepIndex < 0) {
+      openOverlay(cfg.title, "Start");
+      $("ovBody").innerHTML = '<p class="guided-lead">Enter the point number first. Description and notes are optional and are stamped on every photo \u2014 nothing is invented.</p>' +
+        '<div class="grid g2">' +
+        fieldHtml("gPt", "Point number", draft.pointNo, { ph: "Required for the file name", list: "ctrlList", span: true }) +
+        fieldHtml("gDesc", "Description", draft.description, { ph: "Optional", span: true }) +
+        fieldHtml("gNotes", "Notes", draft.notes, { ph: "Optional", span: true, type: "textarea" }) +
+        "</div>";
+      $("ovFoot").innerHTML = '<button type="button" class="btn btn-primary" id="gStart">Continue</button>';
+      if ($("gPt")) { $("gPt").focus(); $("gPt").select && $("gPt").select(); }
+      $("gStart").onclick = function () {
+        var pt = ($("gPt") && $("gPt").value.trim()) || "";
+        if (!pt) { toast("Enter a point number for the file name"); return; }
+        draft.pointNo = pt;
+        draft.description = ($("gDesc") && $("gDesc").value.trim()) || "";
+        draft.notes = ($("gNotes") && $("gNotes").value.trim()) || "";
+        setCurrentPoint(pt);
+        draft.stepIndex = 0;
+        renderGuidedPhoto();
+      };
+      return;
+    }
+    var step = cfg.steps[draft.stepIndex];
+    var total = cfg.steps.length;
+    var n = draft.stepIndex + 1;
+    var shot = draft.shots[step.id];
+    var showComment = !!(step.composite && shot);
+    openOverlay(cfg.title, "Step " + n + " of " + total);
+    var html = '<p class="guided-step">Step ' + n + " of " + total + "</p>";
+    html += '<h2 class="guided-title">' + esc(step.title) + "</h2>";
+    html += '<p class="guided-hint">' + esc(step.hint) + "</p>";
+    html += '<div class="guided-preview" id="gPrev"></div>';
+    html += '<div class="actions guided-actions">';
+    html += '<button type="button" class="btn btn-primary" id="gCam">' + (shot ? "Retake" : "Take photo") + "</button>";
+    html += '<button type="button" class="btn" id="gLib">Choose from library</button>';
+    html += "</div>";
+    if (showComment) {
+      html += fieldHtml("gComment", "Comment (optional)", draft.comment, { ph: "Stamped at the bottom right of the inset photo only if you enter one", span: true, type: "textarea" });
+    }
+    $("ovBody").innerHTML = html;
+    var foot = "";
+    if (draft.stepIndex > 0) foot += '<button type="button" class="btn" id="gBack">Back</button>';
+    if (!step.required) foot += '<button type="button" class="btn" id="gSkip">Skip</button>';
+    var canNext = draft.stepIndex < cfg.steps.length - 1 && (shot || !step.required);
+    var requiredDone = cfg.steps.every(function (s) { return !s.required || draft.shots[s.id]; });
+    if (canNext) foot += '<button type="button" class="btn btn-primary" id="gNext">Next</button>';
+    if (requiredDone && (step.composite || draft.stepIndex === cfg.steps.length - 1 || !step.required)) {
+      foot += '<button type="button" class="btn btn-primary" id="gSave">Save photos</button>';
+    }
+    $("ovFoot").innerHTML = foot || "";
+    function showPreview(url) {
+      if ($("gPrev")) $("gPrev").innerHTML = url ? '<img alt="Preview" src="' + url + '">' : "";
+    }
+    function applyGps(pos) {
+      if (!pos || pos.lat == null || pos.lon == null) return;
+      draft.lat = Number(pos.lat).toFixed(6);
+      draft.lon = Number(pos.lon).toFixed(6);
+      draft.gpsAccuracy = (pos.accuracy != null && isFinite(pos.accuracy)) ? String(Math.round(pos.accuracy * 10) / 10) : "";
+      draft.heading = (pos.heading != null && isFinite(pos.heading)) ? String(Math.round(pos.heading)) : "";
+    }
+    function capture(kind) {
+      FNPlatform.getLocation().then(applyGps).catch(function () {});
+      if (kind === "lib") $("libraryInput").click();
+      else $("cameraInput").click();
+    }
+    if ($("gCam")) $("gCam").onclick = function () { capture("cam"); };
+    if ($("gLib")) $("gLib").onclick = function () { capture("lib"); };
+    if ($("gBack")) $("gBack").onclick = function () {
+      if ($("gComment")) draft.comment = $("gComment").value;
+      draft.stepIndex -= 1;
+      renderGuidedPhoto();
+    };
+    if ($("gNext")) $("gNext").onclick = function () {
+      if (step.required && !draft.shots[step.id]) { toast("Take this photo first, or go back"); return; }
+      if ($("gComment")) draft.comment = $("gComment").value;
+      draft.stepIndex += 1;
+      renderGuidedPhoto();
+    };
+    if ($("gSkip")) $("gSkip").onclick = function () {
+      if ($("gComment")) draft.comment = $("gComment").value;
+      delete draft.shots[step.id];
+      if (draft.stepIndex < cfg.steps.length - 1) {
+        draft.stepIndex += 1;
+        renderGuidedPhoto();
+      } else {
+        saveGuidedPhotos();
+      }
+    };
+    if ($("gSave")) $("gSave").onclick = function () { saveGuidedPhotos(); };
+    if (shot && step.composite && step.insetFrom && draft.shots[step.insetFrom]) {
+      Promise.all([loadImage(shot.dataUrl), loadImage(draft.shots[step.insetFrom].dataUrl)]).then(function (imgs) {
+        return composeGuidedPhoto(imgs[0], imgs[1], photoMetaFromGuided(draft, new Date()), ($("gComment") && $("gComment").value) || draft.comment, step.insetShape, { annotate: true });
+      }).then(function (out) { showPreview(out.dataUrl); }).catch(function () { showPreview(shot.dataUrl); });
+    } else if (shot) {
+      showPreview(shot.dataUrl);
+    }
+    if ($("gComment")) {
+      $("gComment").addEventListener("change", function () { draft.comment = $("gComment").value; });
+      $("gComment").addEventListener("blur", function () {
+        draft.comment = $("gComment").value;
+        if (shot && step.composite && step.insetFrom && draft.shots[step.insetFrom]) {
+          Promise.all([loadImage(shot.dataUrl), loadImage(draft.shots[step.insetFrom].dataUrl)]).then(function (imgs) {
+            return composeGuidedPhoto(imgs[0], imgs[1], photoMetaFromGuided(draft, new Date()), draft.comment, step.insetShape, { annotate: true });
+          }).then(function (out) { showPreview(out.dataUrl); });
+        }
+      });
+    }
+  }
+  function handleGuidedPhotoFile(file) {
+    if (!file || !guidedDraft) return;
+    var draft = guidedDraft;
+    var step = guidedStep();
+    if (!step) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      draft.shots[step.id] = { dataUrl: reader.result };
+      renderGuidedPhoto();
+    };
+    reader.readAsDataURL(file);
+  }
+  function saveGuidedPhotos() {
+    if (!guidedDraft) return;
+    var draft = guidedDraft;
+    var cfg = GUIDED_PHOTO[draft.mode];
+    if ($("gComment")) draft.comment = $("gComment").value;
+    var missing = cfg.steps.filter(function (s) { return s.required && !draft.shots[s.id]; });
+    if (missing.length) { toast("Take the required photos first"); return; }
+    var pt = String(draft.pointNo || "").trim();
+    if (!pt) { toast("Enter a point number for the file name"); return; }
+    draft.pointNo = pt;
+    var when = new Date();
+    var meta = photoMetaFromGuided(draft, when);
+    var used = usedPhotoNames();
+    Object.keys(draft.events).forEach(function (part) {
+      var ev = draft.events[part];
+      if (ev && ev.filename) delete used[String(ev.filename).toLowerCase()];
+    });
+    var names = {};
+    Object.keys(draft.events).forEach(function (part) {
+      if (draft.events[part] && draft.events[part].filename && draft.shots[part]) names[part] = draft.events[part].filename;
+    });
+    var fresh = guidedNames(pt, draft.mode, used);
+    cfg.steps.forEach(function (s) { if (!names[s.id] && draft.shots[s.id]) names[s.id] = fresh[s.id]; });
+    var warn = warnIfPointIssue(pt);
+    var chain = Promise.resolve();
+    var saved = 0;
+    cfg.steps.forEach(function (s) {
+      if (!draft.shots[s.id]) {
+        if (draft.events[s.id] && !s.required) {
+          /* skipped optional extra on a new take: leave an existing extra alone when editing, remove only if they skipped a new one */
+        }
+        return;
+      }
+      chain = chain.then(function () { return loadImage(draft.shots[s.id].dataUrl); }).then(function (baseImg) {
+        var work = Promise.resolve(null);
+        if (s.composite && s.insetFrom && draft.shots[s.insetFrom]) {
+          work = loadImage(draft.shots[s.insetFrom].dataUrl).then(function (insetImg) {
+            return composeGuidedPhoto(baseImg, insetImg, meta, s.composite ? draft.comment : "", s.insetShape, { annotate: true });
+          });
+        } else {
+          work = drawWatermark(baseImg, meta, { annotate: true });
+        }
+        return work.then(function (out) {
+          if (!out || !out.blob) throw new Error("encode");
+          var ev = draft.events[s.id] || { id: uid(), type: "photo", ts: when.toISOString() };
+          ev.time = draft.time || nowTime();
+          ev.ts = ev.ts || when.toISOString();
+          ev.pointNo = pt;
+          ev.code = draft.description || "";
+          ev.notes = draft.notes || "";
+          ev.lat = draft.lat || ev.lat || "";
+          ev.lon = draft.lon || ev.lon || "";
+          ev.gpsAccuracy = draft.gpsAccuracy || ev.gpsAccuracy || "";
+          ev.heading = draft.heading || ev.heading || "";
+          ev.fields = ev.fields || {};
+          ev.fields.photoMode = draft.mode;
+          ev.fields.part = s.id;
+          ev.fields.setId = draft.setId;
+          ev.fields.description = draft.description || "";
+          ev.fields.type = cfg.type;
+          if (s.composite) ev.fields.comment = (draft.comment || "").trim();
+          ev.filename = names[s.id];
+          ev.fileId = ev.fileId || ("photo-" + ev.id);
+          ev.type = "photo";
+          ev.warnOutside = warn.outside;
+          ev.warnDuplicate = warn.duplicate;
+          return FNIdb.filePut({ id: ev.fileId, kind: "photo", name: ev.filename, type: "image/jpeg", blob: out.blob }).then(function () {
+            upsertEvent(ev);
+            saved++;
+          });
+        });
+      });
+    });
+    chain.then(function () {
+      setCurrentPoint(pt);
+      guidedDraft = null;
+      closeOverlay();
+      toast("Saved " + saved + " " + cfg.title.toLowerCase() + (saved === 1 ? "" : "s"));
+    }).catch(function () { toast("Could not save those photos"); });
+  }
+
+
   function openPhoto(existing) {
+    if (existing && existing.fields && (existing.fields.photoMode === "pole" || existing.fields.photoMode === "monument")) {
+      openGuidedPhoto(existing.fields.photoMode, existing.fields.setId);
+      return;
+    }
     if (!existing) {
       openOverlay("Photo", "Point number");
       var last = state.currentPoint || "";
@@ -1035,6 +1485,7 @@
   }
 
   function handlePhotoFile(file) {
+    if (guidedDraft) { handleGuidedPhotoFile(file); return; }
     if (!file || !photoDraft) return;
     var ev = photoDraft;
     var reader = new FileReader();
@@ -1599,7 +2050,7 @@
       return String(eventTime(a)).localeCompare(String(eventTime(b)));
     }).map(function (ev) {
       var pt = eventPoint(ev);
-      var line = (ev.time ? ev.time + "  " : "") + typeLabel(ev.type);
+      var line = (ev.time ? ev.time + "  " : "") + eventLabel(ev);
       if (pt) line += "  pt " + pt;
       if (ev.notes) line += "  — " + ev.notes;
       if (ev.status) line += "  [" + ev.status + "]";
@@ -2268,7 +2719,7 @@
     if (!evs.length) body += '<p class="muted">No entries were logged this day.</p>';
     evs.forEach(function (ev) {
       body += '<div style="margin:0 0 8px;border-bottom:1px solid #ddd;padding-bottom:6px">';
-      body += "<strong>" + esc(typeLabel(ev.type)) + "</strong> " + esc(ev.time || "");
+      body += "<strong>" + esc(eventLabel(ev)) + "</strong> " + esc(ev.time || "");
       var pt = eventPoint(ev);
       if (pt) body += " &middot; Point " + esc(pt);
       if (ev.status) body += " &middot; " + esc(ev.status);
@@ -2314,7 +2765,7 @@
       if (ev.type === "ts_setup" && ev.fields && ev.fields.residuals) rows.push({ ev: ev, ch: ev.fields.residuals, kind: "TS residuals", residuals: ev.fields.residuals });
       if (ev.type === "bs_check" || ev.type === "rover_check") {
         var ch = ev.check || ev.fields || {};
-        rows.push({ ev: ev, ch: ch, kind: typeLabel(ev.type) });
+        rows.push({ ev: ev, ch: ch, kind: eventLabel(ev) });
       }
     });
     var body = '<div class="hdr">' + printLogoHtml() + "<div><h1>Control Check Report</h1></div></div>" + headerMetaHtml();
@@ -2441,6 +2892,7 @@
       var details = "";
       if (ev.type === "gnss_base") details = gnssSummary(ev);
       else if (ev.type === "ts_setup") details = tsSummary(ev);
+      else if (ev.type === "photo") details = [ev.filename || "", ev.fields && ev.fields.photoMode, ev.fields && ev.fields.part].filter(Boolean).join(" ");
       rows.push([ev.time || "", ev.type || "", eventPoint(ev), ev.notes || "", ev.status || "", details, ev.importedFrom || "", ev.warnOutside ? "Y" : "", ev.warnDuplicate ? "Y" : ""]);
     });
     return toCsv(rows);
@@ -2512,15 +2964,15 @@
     var setups = [], points = [], photos = [];
     (state.events || []).forEach(function (ev) {
       var ll = eventLonLat(ev);
-      var desc = [typeLabel(ev.type), ev.notes || "", ev.time || "", eventPoint(ev) ? "pt " + eventPoint(ev) : "", crs].filter(Boolean).join("<br>");
+      var desc = [eventLabel(ev), ev.notes || "", ev.time || "", eventPoint(ev) ? "pt " + eventPoint(ev) : "", crs].filter(Boolean).join("<br>");
       if (ev.type === "photo") {
         var href = photoHrefs && ev.filename ? photoHrefs[ev.filename] : "";
         if (href) desc += "<br/><img src=\"" + href + "\" width=\"240\">";
         photos.push(kmlPlacemark(eventPoint(ev) || ev.filename || "Photo", desc, ll, "st-photo"));
       } else if (ev.type === "gnss_base" || ev.type === "ts_setup") {
-        setups.push(kmlPlacemark(eventPoint(ev) || typeLabel(ev.type), desc, ll, "st-setup"));
+        setups.push(kmlPlacemark(eventPoint(ev) || eventLabel(ev), desc, ll, "st-setup"));
       } else {
-        points.push(kmlPlacemark(eventPoint(ev) || typeLabel(ev.type), desc, ll, "st-point"));
+        points.push(kmlPlacemark(eventPoint(ev) || eventLabel(ev), desc, ll, "st-point"));
       }
     });
     (state.importedPoints || []).forEach(function (p) {
@@ -3289,7 +3741,7 @@
     if (selected.fieldNotes) {
       var evs = state.events || [];
       addText(folder("fieldNotes") + "field-notes.html", standalone("Field Notes", '<div class="hdr">' + printLogoHtml() + "<div><h1>Field Notes</h1></div></div>" + headerMetaHtml() + (evs.length ? evs.map(function (ev) {
-        return "<div><strong>" + esc(typeLabel(ev.type)) + "</strong> " + esc(ev.time || "") + (eventPoint(ev) ? " · pt " + esc(eventPoint(ev)) : "") + (ev.type === "gnss_base" && gnssSummary(ev) ? "<div>" + esc(gnssSummary(ev)) + "</div>" : "") + (ev.notes ? "<div>" + esc(ev.notes) + "</div>" : "") + "</div>";
+        return "<div><strong>" + esc(eventLabel(ev)) + "</strong> " + esc(ev.time || "") + (eventPoint(ev) ? " · pt " + esc(eventPoint(ev)) : "") + (ev.type === "gnss_base" && gnssSummary(ev) ? "<div>" + esc(gnssSummary(ev)) + "</div>" : "") + (ev.notes ? "<div>" + esc(ev.notes) + "</div>" : "") + "</div>";
       }).join("") : "<p>No entries were logged this day.</p>")), "html");
     }
     if (selected.level) {
@@ -3600,12 +4052,13 @@
   }
 
   function photoLogCsv() {
-    var rows = [["filename", "pointNo", "code", "note", "jobNo", "dateTime", "crew", "lat", "lon", "accuracy", "heading", "timestamp"]];
+    var rows = [["filename", "type", "part", "pointNo", "code", "note", "jobNo", "dateTime", "crew", "lat", "lon", "accuracy", "heading", "timestamp"]];
     (state.events || []).forEach(function (ev) {
       if (ev.type !== "photo") return;
       var f = ev.fields || {};
+      var typ = f.photoMode || f.type || "photo";
       rows.push([
-        ev.filename || "", ev.pointNo || "", f.code || ev.code || "", ev.notes || "",
+        ev.filename || "", typ, f.part || "", ev.pointNo || "", f.code || ev.code || f.description || "", ev.notes || "",
         state.header.jobNo || "", ev.ts || ev.time || "",
         [state.header.partyChief, state.header.crew].filter(Boolean).join(" / "),
         ev.lat || "", ev.lon || "", ev.gpsAccuracy || f.accuracy || "", ev.heading || f.heading || ""
@@ -3724,7 +4177,7 @@
     var chain = Promise.resolve();
     evs.forEach(function (ev) {
       chain = chain.then(function () {
-        var line = typeLabel(ev.type) + "  " + (ev.time || "") + (eventPoint(ev) ? "  Pt " + eventPoint(ev) : "") + (ev.status ? "  " + ev.status : "");
+        var line = eventLabel(ev) + "  " + (ev.time || "") + (eventPoint(ev) ? "  Pt " + eventPoint(ev) : "") + (ev.status ? "  " + ev.status : "");
         doc.para(line, true);
         if (ev.type === "gnss_base" && gnssSummary(ev)) doc.para(gnssSummary(ev));
         if (ev.type === "ts_setup" && tsSummary(ev)) doc.para(tsSummary(ev));
@@ -3914,6 +4367,8 @@
     if ($("btnGnss")) $("btnGnss").addEventListener("click", function () { openGnss(); });
     if ($("btnTs")) $("btnTs").addEventListener("click", function () { openTs(); });
     if ($("btnPhoto")) $("btnPhoto").addEventListener("click", function () { openPhoto(); });
+    if ($("btnPolePhoto")) $("btnPolePhoto").addEventListener("click", function () { openGuidedPhoto("pole"); });
+    if ($("btnMonumentPhoto")) $("btnMonumentPhoto").addEventListener("click", function () { openGuidedPhoto("monument"); });
     if ($("btnSketch")) $("btnSketch").addEventListener("click", function () { openSketch(); });
     if ($("ovClose")) $("ovClose").addEventListener("click", closeOverlay);
     if ($("btnEod")) $("btnEod").addEventListener("click", printFieldNotes);
