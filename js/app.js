@@ -785,29 +785,31 @@
     function row(key, label) {
       var r = res[key] || {};
       return "<tr><th>" + label + "</th>" +
-        '<td><input id="r' + key + 'Obs" type="text" inputmode="decimal" value="' + esc(r.obs || "") + '" placeholder="Observed" autocomplete="off"></td>' +
         '<td><input id="r' + key + 'Res" type="text" inputmode="decimal" value="' + esc(r.residual || "") + '" placeholder="e.g. -0.012" autocomplete="off"></td></tr>';
     }
-    return '<h2>Residuals</h2><p class="hint">Enter observed and residual values. Residuals are signed (for example -0.012). Nothing is calculated or filled in.</p>' +
-      '<table class="resid-table"><thead><tr><th></th><th>Observed</th><th>Residual</th></tr></thead><tbody>' +
-      row("horizontal", "Horizontal") + row("vertical", "Vertical") + row("distance", "Distance") +
+    return '<h2>Residuals</h2><p class="hint">Signed residuals (for example -0.012). Nothing is calculated or filled in.</p>' +
+      '<table class="resid-table"><thead><tr><th></th><th>Residual</th></tr></thead><tbody>' +
+      row("horizontal", "Horizontal") + row("vertical", "Vertical") +
       "</tbody></table>";
   }
-  function readResiduals() {
+  function readResiduals(prev) {
+    var keep = residualsFrom({ fields: { residuals: prev } });
     function val(id) { return $(id) ? String($(id).value || "").trim() : ""; }
     return {
-      horizontal: { obs: val("rhorizontalObs"), residual: val("rhorizontalRes") },
-      vertical: { obs: val("rverticalObs"), residual: val("rverticalRes") },
-      distance: { obs: val("rdistanceObs"), residual: val("rdistanceRes") }
+      horizontal: { obs: keep.horizontal.obs, residual: val("rhorizontalRes") },
+      vertical: { obs: keep.vertical.obs, residual: val("rverticalRes") },
+      distance: { obs: keep.distance.obs, residual: keep.distance.residual }
     };
   }
   function residualsSummary(res) {
     res = res || {};
     var parts = [];
-    [["horizontal", "H"], ["vertical", "V"], ["distance", "D"]].forEach(function (pair) {
+    [["horizontal", "H"], ["vertical", "V"]].forEach(function (pair) {
       var r = res[pair[0]] || {};
-      if (r.obs || r.residual) parts.push(pair[1] + " obs " + (r.obs || "\u2014") + "  res " + (r.residual || "\u2014"));
+      if (r.residual) parts.push(pair[1] + " " + r.residual);
     });
+    var d = (res.distance || {}).residual;
+    if (d) parts.push("D " + d);
     return parts.join(" \u00b7 ");
   }
   function tsSummary(ev) {
@@ -847,7 +849,7 @@
       ev.fields.bsPt = $("tBs").value;
       ev.fields.ht = $("tHT").value;
       ev.fields.htMethod = $("tHTMethod").value;
-      ev.fields.residuals = readResiduals();
+      ev.fields.residuals = readResiduals(ev.fields.residuals);
       ev.type = "ts_setup";
       var warn = warnIfPointIssue(ev.pointNo, ev.id);
       ev.warnOutside = warn.outside; ev.warnDuplicate = warn.duplicate;
@@ -2320,6 +2322,11 @@
     if (!rows.length) body += '<tr><td colspan="8">No measured checks have been logged against control.</td></tr>';
     rows.forEach(function (r) {
       var c = r.ch;
+      if (r.residuals) {
+        body += "<tr><td>" + esc(r.kind) + "</td><td>" + esc(eventPoint(r.ev)) + "</td><td colspan=\"6\">" +
+          esc(residualsSummary(r.residuals) || "No residuals entered") + "</td></tr>";
+        return;
+      }
       body += "<tr><td>" + esc(r.kind) + "</td><td>" + esc(c.pt || eventPoint(r.ev)) + "</td><td>" +
         esc(fmtRes(residual(c.nObs, c.nRec))) + "</td><td>" + esc(fmtRes(residual(c.eObs, c.eRec))) + "</td><td>" +
         esc(fmtRes(residual(c.elevObs, c.elevRec))) + "</td><td>" + esc(fmtRes(residual(c.hdObs, c.hdRec))) + "</td><td>" +
