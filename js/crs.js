@@ -127,21 +127,26 @@
   }
 
   function parseAngle(text) {
-    var t = String(text || "").trim();
-    if (!t) return null;
-    /* decimal degrees, optional hemisphere */
-    var dec = t.match(/^\s*([+-]?\d+(?:\.\d+)?)\s*([NSEW])?\s*$/i);
-    if (dec) {
-      var v = Number(dec[1]);
-      var H = (dec[2] || "").toUpperCase();
-      if (H === "S" || H === "W") v = -Math.abs(v);
-      if (H === "N" || H === "E") v = Math.abs(v);
-      return v;
-    }
-    var dms = t.match(/([NSEW])?\s*([+-]?\d+(?:\.\d+)?)\s*[°d\s]+\s*(\d+(?:\.\d+)?)?\s*['′m]?\s*(\d+(?:\.\d+)?)?\s*[\"″s]?\s*([NSEW])?/i);
-    if (dms) {
-      return dmsToDeg(dms[2], dms[3], dms[4], dms[1] || dms[5]);
-    }
+    var raw = String(text || "").trim();
+    if (!raw) return null;
+    var hemi = "";
+    var t = raw;
+    var lead = t.match(/^([NSEW])\s*(.+)$/i);
+    if (lead) { hemi = lead[1]; t = lead[2].trim(); }
+    /* Trailing hemisphere needs a separator so a seconds "s" is not read as south. */
+    var trail = t.match(/^(.+?)(?:\s+|["″'′°])([NSEW])$/i);
+    if (trail) { hemi = trail[2]; t = trail[1].trim(); }
+    /* Plain decimal degrees. Packed DD.MMSS is not assumed — 34.14449 stays decimal. */
+    if (/^[+-]?\d+(?:\.\d+)?$/.test(t)) return dmsToDeg(t, 0, 0, hemi);
+    var norm = t.replace(/degrees?|deg\b/ig, "°")
+      .replace(/minutes?|mins\b/ig, "'")
+      .replace(/seconds?|secs\b/ig, '"');
+    norm = norm.replace(/(\d)\s*[dD]\s*/g, "$1°");
+    norm = norm.replace(/(\d)\s*[mM]\s*(?=\d|$)/g, "$1'");
+    norm = norm.replace(/(\d)\s*[sS]\s*$/g, "$1\"");
+    while (/(\d)-(\d)/.test(norm)) norm = norm.replace(/(\d)-(\d)/g, "$1 $2");
+    var dms = norm.match(/^([+-]?\d+(?:\.\d+)?)\s*°?\s*(?:(\d+(?:\.\d+)?)\s*'?\s*(?:(\d+(?:\.\d+)?)\s*"?)?)?$/);
+    if (dms) return dmsToDeg(dms[1], dms[2], dms[3], hemi);
     return null;
   }
 

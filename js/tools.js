@@ -5,7 +5,7 @@
   var USFT = 1200 / 3937;
   var INTL = 0.3048;
   var TOOLS = [
-    { id: "units", label: "Units", sub: "Feet, metres, DMS, slope" },
+    { id: "units", label: "Units", sub: "Feet, chains, metres, DMS, slope" },
     { id: "inverse", label: "Inverse", sub: "Bearing and distance between two points" },
     { id: "traverse", label: "Traverse / COGO", sub: "New point by bearing and distance" },
     { id: "curve", label: "Curve", sub: "Circular curve elements" },
@@ -23,7 +23,12 @@
   function $(id) { return document.getElementById(id); }
   function esc(s) { return api && api.esc ? api.esc(s) : String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]; }); }
   function toast(m) { if (api && api.toast) api.toast(m); }
-  function n(v) { var x = Number(String(v || "").replace(/,/g, "")); return isFinite(x) ? x : null; }
+  function n(v) {
+    var s = String(v == null ? "" : v).trim().replace(/,/g, "");
+    if (!s) return null;
+    var x = Number(s);
+    return isFinite(x) ? x : null;
+  }
   function fld(id, label, opts) {
     opts = opts || {};
     var typ = opts.type || "text";
@@ -36,22 +41,37 @@
             ' value="' + esc(opts.value || "") + '" placeholder="' + esc(opts.ph || "") + '">') +
       "</label>";
   }
-  function resultBox(html) { return '<div class="tool-result" id="toolResult">' + html + "</div>"; }
+  function resultBox(html, id) { return '<div class="tool-result" id="' + (id || "toolResult") + '">' + html + "</div>"; }
 
+  /* Gunter's chain = 66 US survey feet = 100 links. Rod (pole/perch) = 16.5 US survey feet. */
+  var CHAIN_USFT = 66;
+  var LINK_USFT = 66 / 100;
+  var ROD_USFT = 33 / 2;
+  function usFtPerUnit(unit) {
+    if (unit === "us-ft") return 1;
+    if (unit === "chain") return CHAIN_USFT;
+    if (unit === "link") return LINK_USFT;
+    if (unit === "rod") return ROD_USFT;
+    return null;
+  }
   function toMeters(v, unit) {
     if (v == null) return null;
-    if (unit === "us-ft") return v * USFT;
     if (unit === "intl-ft") return v * INTL;
+    if (unit === "m") return v;
+    var f = usFtPerUnit(unit);
+    if (f != null) return v * f * USFT;
     return v;
   }
   function fromMeters(v, unit) {
     if (v == null) return null;
-    if (unit === "us-ft") return v / USFT;
     if (unit === "intl-ft") return v / INTL;
+    if (unit === "m") return v;
+    var f = usFtPerUnit(unit);
+    if (f != null) return v / (f * USFT);
     return v;
   }
   function unitLabel(u) {
-    return u === "us-ft" ? "US survey ft" : u === "intl-ft" ? "international ft" : "m";
+    return ({ "us-ft": "US survey ft", "intl-ft": "international ft", "m": "m", "chain": "chains", "link": "links", "rod": "rods" })[u] || u;
   }
   function fmt(v, d) {
     if (v == null || !isFinite(v)) return "—";
@@ -60,6 +80,19 @@
   }
   function jobUnits() {
     return (api && api.getCrs && api.getCrs().crsUnits) || "us-ft";
+  }
+  function lengthUnitOptions(sel) {
+    return [
+      "us-ft|US survey feet",
+      "intl-ft|International feet",
+      "m|Metres",
+      "chain|Chains (Gunter's, 66 US ft)",
+      "link|Links (100 per chain)",
+      "rod|Rods (16.5 US ft)"
+    ].map(function (p) {
+      var a = p.split("|");
+      return '<option value="' + a[0] + '"' + (sel === a[0] ? " selected" : "") + ">" + a[1] + "</option>";
+    }).join("");
   }
   function unitOptions(sel) {
     return ["us-ft|US survey feet", "intl-ft|International feet", "m|Metres"].map(function (p) {
@@ -70,21 +103,55 @@
   function parseAzimuth(text) {
     var t = String(text || "").trim();
     if (!t) return null;
-    /* Bearing: N 45°12'30" E  or S45-12-30W */
-    var b = t.match(/^\s*([NS])\s*([0-9.]+)(?:[°d\s-]+([0-9.]+))?(?:['′\s-]+([0-9.]+))?\s*[\"″s]?\s*([EW])\s*$/i);
-    if (b) {
-      var ang = Math.abs(Number(b[2])) + (Number(b[3]) || 0) / 60 + (Number(b[4]) || 0) / 3600;
-      var ns = b[1].toUpperCase(), ew = b[5].toUpperCase();
-      var az;
-      if (ns === "N" && ew === "E") az = ang;
-      else if (ns === "N" && ew === "W") az = 360 - ang;
-      else if (ns === "S" && ew === "E") az = 180 - ang;
-      else az = 180 + ang;
-      return ((az % 360) + 360) % 360;
+    /* Bearing: N 45d30'00" E, N45d30m00sE, S45-12-30W, etc. */
+    var b = t.match(/^\s*([NS])\s*(.+?)\s*([EW])\s*$/i);
+    if (b && global.FNCrs && FNCrs.parseAngle) {
+      var ang = FNCrs.parseAngle(b[2]);
+      if (ang != null && isFinite(ang)) {
+        ang = Math.abs(ang);
+        var ns = b[1].toUpperCase(), ew = b[3].toUpperCase();
+        var az;
+        if (ns === "N" && ew === "E") az = ang;
+        else if (ns === "N" && ew === "W") az = 360 - ang;
+        else if (ns === "S" && ew === "E") az = 180 - ang;
+        else az = 180 + ang;
+        return ((az % 360) + 360) % 360;
+      }
     }
     var deg = (global.FNCrs && FNCrs.parseAngle) ? FNCrs.parseAngle(t) : Number(t);
     if (deg == null || !isFinite(deg)) return null;
     return ((deg % 360) + 360) % 360;
+  }
+  function parseSlope(text) {
+    var t = String(text || "").trim();
+    if (!t) return null;
+    var ratio = t.match(/^([+-]?\d+(?:\.\d+)?)\s*[:/]\s*([+-]?\d+(?:\.\d+)?)$/);
+    if (ratio) {
+      var h = Number(ratio[1]), v = Number(ratio[2]);
+      if (!isFinite(h) || h === 0) return null;
+      return v / h;
+    }
+    var x = n(t.replace(/%/g, ""));
+    if (x == null) return null;
+    return x / 100;
+  }
+  function solveGrade(dist, slope, dElev) {
+    var hasD = dist != null, hasS = slope != null, hasE = dElev != null;
+    var out = { dist: dist, slope: slope, dElev: dElev, solved: null };
+    var known = (hasD ? 1 : 0) + (hasS ? 1 : 0) + (hasE ? 1 : 0);
+    if (known < 2) return out;
+    if (hasD && hasS && !hasE) { out.dElev = dist * slope; out.solved = "dElev"; }
+    else if (hasD && hasE && !hasS) {
+      if (dist === 0) return out;
+      out.slope = dElev / dist; out.solved = "slope";
+    } else if (hasS && hasE && !hasD) {
+      if (slope === 0) return out;
+      out.dist = dElev / slope; out.solved = "dist";
+    }
+    return out;
+  }
+  function angleHint() {
+    return '<p class="hint">Use d for ° — 34d14\'44.9", 34d14m44.9s, 34d14 44.9, or decimal degrees.</p>';
   }
   function azToBearing(az) {
     az = ((Number(az) % 360) + 360) % 360;
@@ -147,33 +214,44 @@
   function unitsHtml() {
     return '<div class="card"><h2>Length</h2><div class="grid g2">' +
       fld("uLen", "Value", { dec: true }) +
-      fld("uFrom", "From", { type: "select", options: unitOptions("us-ft") }) +
-      "</div>" + resultBox('<p class="hint">Enter a length to convert.</p>') + "</div>" +
+      fld("uFrom", "From", { type: "select", options: lengthUnitOptions("us-ft") }) +
+      "</div>" + resultBox('<p class="hint">Enter a length to convert.</p>', 'uLenBox') + "</div>" +
       '<div class="card"><h2>Angle</h2><div class="grid g2">' +
-      fld("uAng", "Decimal degrees or D° M' S\"", { ph: "e.g. 117.5 or 117° 30' 00\"" }) +
-      "</div>" + resultBox('<p class="hint" id="uAngOut">Enter an angle.</p>') + "</div>" +
-      '<div class="card"><h2>Grade / slope</h2><p class="hint">Enter any one field. Ratio is run:rise (e.g. 2:1).</p><div class="grid g2">' +
+      fld("uAng", "Decimal degrees or DMS", { ph: "e.g. 117.5 or 34d14'44.9\"" }) +
+      "</div>" + angleHint() + resultBox('<p class="hint">Enter an angle.</p>', 'uAngBox') + "</div>" +
+      '<div class="card"><h2>Grade / slope</h2><p class="hint">Enter any one field. Ratio is run:rise (H:V), e.g. 2:1.</p><div class="grid g2">' +
       fld("uPct", "Percent (%)", { dec: true }) +
-      fld("uRatio", "Ratio (run:rise)", { ph: "e.g. 2:1" }) +
+      fld("uRatio", "Ratio (H:V)", { ph: "e.g. 2:1" }) +
       fld("uDeg", "Degrees", { dec: true }) +
-      "</div>" + resultBox('<p class="hint" id="uGradeOut">Enter a slope.</p>') + "</div>";
+      "</div>" + resultBox('<p class="hint">Enter a slope.</p>', 'uGradeBox') +
+      "<h3>Distance, slope, and elevation</h3>" +
+      '<p class="hint">Enter any two of horizontal distance, slope, and change in elevation to solve the third. Slope is percent (2 or 2%) or a ratio H:V (50:1).</p><div class="grid g2">' +
+      fld("uGDist", "Horizontal distance (ft)", { dec: true }) +
+      fld("uGSlope", "Slope (% or ratio H:V)", { ph: "e.g. 2, 2%, or 50:1" }) +
+      fld("uGElev", "Change in elevation (ft)", { dec: true }) +
+      fld("uGStart", "Start elevation (ft, optional)", { dec: true }) +
+      "</div>" + resultBox('<p class="hint">Enter any two values.</p>', 'uGSolveBox') + "</div>";
   }
   function bindUnits() {
     function convLen() {
       var v = n($("uLen").value), from = $("uFrom").value;
-      var box = document.querySelector("#toolResult");
+      var box = $("uLenBox");
       if (v == null) { box.innerHTML = '<p class="hint">Enter a length to convert.</p>'; return; }
       var m = toMeters(v, from);
-      box.innerHTML = "<div class=\"row\"><span>US survey feet</span><span>" + fmt(fromMeters(m, "us-ft"), 6) + "</span></div>" +
-        "<div class=\"row\"><span>International feet</span><span>" + fmt(fromMeters(m, "intl-ft"), 6) + "</span></div>" +
-        "<div class=\"row\"><span>Metres</span><span>" + fmt(m, 6) + "</span></div>" +
-        '<p class="hint">1 US survey foot = 1200/3937 m (exact). 1 international foot = 0.3048 m (exact).</p>';
+      box.innerHTML = "<div class=\"row\"><span>Chains (Gunter's)</span><span>" + fmt(fromMeters(m, "chain"), 7) + "</span></div>" +
+        "<div class=\"row\"><span>Links</span><span>" + fmt(fromMeters(m, "link"), 7) + "</span></div>" +
+        "<div class=\"row\"><span>Rods</span><span>" + fmt(fromMeters(m, "rod"), 7) + "</span></div>" +
+        "<div class=\"row\"><span>US survey feet</span><span>" + fmt(fromMeters(m, "us-ft"), 7) + "</span></div>" +
+        "<div class=\"row\"><span>International feet</span><span>" + fmt(fromMeters(m, "intl-ft"), 7) + "</span></div>" +
+        "<div class=\"row\"><span>Metres</span><span>" + fmt(m, 7) + "</span></div>" +
+        '<p class="hint">Gunter’s chain = 66 US survey feet = 100 links. 1 rod = 16.5 US survey feet = 25 links. 1 US survey foot = 1200/3937 m (exact). 1 international foot = 0.3048 m (exact). So 1 chain = 20.1168402 m.</p>';
     }
     function convAng() {
       var deg = FNCrs.parseAngle($("uAng").value);
-      var out = $("uAngOut");
-      if (deg == null) { out.textContent = "Enter an angle."; return; }
-      out.parentElement.innerHTML = "<div class=\"row\"><span>Decimal degrees</span><span>" + fmt(deg, 8) + "</span></div>" +
+      var box = $("uAngBox");
+      if (!box) return;
+      if (deg == null) { box.innerHTML = '<p class="hint">Enter an angle.</p>'; return; }
+      box.innerHTML = "<div class=\"row\"><span>Decimal degrees</span><span>" + fmt(deg, 8) + "</span></div>" +
         "<div class=\"row\"><span>DMS</span><span>" + esc(FNCrs.degToDms(deg, "lat").replace(/ [NS]$/, "")) + "</span></div>";
     }
     function convGrade() {
@@ -186,8 +264,9 @@
         if (p.length === 2 && n(p[0]) && n(p[1])) slope = n(p[1]) / n(p[0]);
       } else if (pct != null) slope = pct / 100;
       else if (deg != null) slope = Math.tan(deg * Math.PI / 180);
-      var box = $("uGradeOut") && $("uGradeOut").parentElement;
-      if (slope == null || !box) return;
+      var box = $("uGradeBox");
+      if (!box) return;
+      if (slope == null) { box.innerHTML = '<p class="hint">Enter a slope.</p>'; return; }
       var run = 1, rise = slope;
       /* present ratio as run:rise with run >= 1 when possible */
       var rRun = slope !== 0 ? Math.abs(1 / slope) : null;
@@ -195,9 +274,27 @@
         "<div class=\"row\"><span>Degrees</span><span>" + fmt(Math.atan(slope) * 180 / Math.PI, 4) + "°</span></div>" +
         "<div class=\"row\"><span>Ratio (run:rise)</span><span>" + (rRun == null ? "vertical" : fmt(rRun, 4) + ":1") + "</span></div>";
     }
+    function convGradeSolve() {
+      var dist = n($("uGDist").value), slope = parseSlope($("uGSlope").value), dElev = n($("uGElev").value);
+      var start = n($("uGStart").value);
+      var box = $("uGSolveBox");
+      if (!box) return;
+      var filled = (dist != null ? 1 : 0) + (slope != null ? 1 : 0) + (dElev != null ? 1 : 0);
+      if (filled < 2) { box.innerHTML = '<p class="hint">Enter any two values.</p>'; return; }
+      var s = solveGrade(dist, slope, dElev);
+      if (filled === 2 && !s.solved) { box.innerHTML = '<p class="hint">Cannot solve from those two values.</p>'; return; }
+      var html = "<div class=\"row\"><span>Horizontal distance</span><span>" + fmt(s.dist, 4) + " ft" + (s.solved === "dist" ? " (solved)" : "") + "</span></div>" +
+        "<div class=\"row\"><span>Slope</span><span>" + (s.slope == null ? "—" : fmt(s.slope * 100, 4) + " % · " + (s.slope === 0 ? "level" : (fmt(Math.abs(1 / s.slope), 4) + ":1 H:V"))) + (s.solved === "slope" ? " (solved)" : "") + "</span></div>" +
+        "<div class=\"row\"><span>Change in elevation</span><span>" + fmt(s.dElev, 4) + " ft" + (s.solved === "dElev" ? " (solved)" : "") + "</span></div>";
+      if (start != null && s.dElev != null) html += "<div class=\"row\"><span>End elevation</span><span>" + fmt(start + s.dElev, 4) + " ft</span></div>";
+      box.innerHTML = html;
+    }
     ["uLen", "uFrom"].forEach(function (id) { $(id).addEventListener("input", convLen); $(id).addEventListener("change", convLen); });
     $("uAng").addEventListener("input", convAng);
     ["uPct", "uRatio", "uDeg"].forEach(function (id) { $(id).addEventListener("input", convGrade); });
+    ["uGDist", "uGSlope", "uGElev", "uGStart"].forEach(function (id) {
+      $(id).addEventListener("input", convGradeSolve); $(id).addEventListener("change", convGradeSolve);
+    });
   }
 
   function inverseHtml() {
@@ -238,10 +335,12 @@
   }
 
   function traverseHtml() {
-    return '<p class="hint">Azimuth is degrees from north, clockwise. Bearings like N 45°12\'30" E also work.</p><div class="card"><div class="grid g2">' +
+    return '<p class="hint">Azimuth is degrees from north, clockwise. Bearings like N 45d30\'00" E also work.</p>' +
+      angleHint() +
+      '<div class="card"><div class="grid g2">' +
       fld("trUnits", "Units", { type: "select", options: unitOptions(jobUnits()) }) +
       fld("trN", "Start North", { dec: true }) + fld("trE", "Start East", { dec: true }) +
-      fld("trAz", "Azimuth or bearing", { ph: "e.g. 45.21000 or N 45°12'36\" E" }) +
+      fld("trAz", "Azimuth or bearing", { ph: "e.g. 45.21000 or N 45d30'00\" E" }) +
       fld("trDist", "Horizontal distance", { dec: true }) +
       "</div>" + resultBox('<p class="hint">Enter start, direction, and distance.</p>') + "</div>";
   }
@@ -266,9 +365,9 @@
     return '<p class="hint">Circular curve. Enter a radius and either the central angle (delta) or the arc length. Degree of curve uses the 100-unit arc definition: D = 18,000 / (π R).</p><div class="card"><div class="grid g2">' +
       fld("cuUnits", "Units", { type: "select", options: unitOptions(jobUnits()) }) +
       fld("cuR", "Radius R", { dec: true }) +
-      fld("cuD", "Delta Δ (degrees or DMS)", { ph: "e.g. 12.5 or 12°30'00\"" }) +
+      fld("cuD", "Delta Δ (degrees or DMS)", { ph: "e.g. 12.5 or 12d30'00\"" }) +
       fld("cuL", "Arc length L (optional)", { dec: true }) +
-      "</div>" + resultBox('<p class="hint">Enter R and Δ, or R and L.</p>') + "</div>";
+      "</div>" + angleHint() + resultBox('<p class="hint">Enter R and Δ, or R and L.</p>') + "</div>";
   }
   function bindCurve() {
     function run() {
@@ -408,9 +507,9 @@
       "</div><h3>Grid → lat/lon</h3><div class=\"grid g2\">" +
       fld("spN", "North", { dec: true }) + fld("spE", "East", { dec: true }) +
       "</div><h3>Lat/lon → grid</h3><div class=\"grid g2\">" +
-      fld("spLat", "Latitude (decimal or DMS)", { ph: "e.g. 36.57858 or 36°34'42.89133\" N" }) +
-      fld("spLon", "Longitude (decimal or DMS)", { ph: "e.g. -118.29199 or 118°17'31.18182\" W" }) +
-      "</div>" + resultBox('<p class="hint">Enter either a grid pair or a lat/lon pair.</p>') + "</div>";
+      fld("spLat", "Latitude (decimal or DMS)", { ph: "e.g. 36.57858 or 36d34'42.89133\" N" }) +
+      fld("spLon", "Longitude (decimal or DMS)", { ph: "e.g. -118.29199 or 118d17'31.18182\" W" }) +
+      "</div>" + angleHint() + resultBox('<p class="hint">Enter either a grid pair or a lat/lon pair.</p>') + "</div>";
   }
   function bindSpc() {
     function fromGrid() {
@@ -518,5 +617,5 @@
     renderHome();
   }
 
-  global.FNTools = { mount: mount, list: TOOLS, open: function (id) { openTool(id); }, renderHome: renderHome };
+  global.FNTools = { mount: mount, list: TOOLS, open: function (id) { openTool(id); }, renderHome: renderHome, parseAzimuth: parseAzimuth, parseSlope: parseSlope, solveGrade: solveGrade };
 })(window);
