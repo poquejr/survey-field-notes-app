@@ -147,14 +147,13 @@
 
   function isComplete(crs) {
     if (!crs) return false;
-    return !!(crs.crsZone && crs.crsDatum && crs.crsEpoch && crs.crsEpochConfirmed && crs.crsUnits && crs.crsVertical);
+    return !!(crs.crsZone && crs.crsEpoch && crs.crsEpochConfirmed && crs.crsUnits && crs.crsVertical);
   }
 
   function missingList(crs) {
     crs = crs || {};
     var miss = [];
     if (!crs.crsZone) miss.push("projection / zone");
-    if (!crs.crsDatum) miss.push("horizontal datum + realization");
     if (!crs.crsEpoch) miss.push("epoch");
     if (!crs.crsEpochConfirmed) miss.push("epoch confirmation");
     if (!crs.crsUnits) miss.push("grid units");
@@ -169,7 +168,6 @@
       var opt = zoneOptions().filter(function (z) { return z.id === crs.crsZone; })[0];
       parts.push(opt ? opt.label : crs.crsZone);
     }
-    if (crs.crsDatum) parts.push(crs.crsDatum);
     if (crs.crsEpoch) parts.push("epoch " + crs.crsEpoch + (crs.crsEpochConfirmed ? " (confirmed)" : " (unconfirmed)"));
     if (crs.crsUnits === "us-ft") parts.push("US survey ft");
     else if (crs.crsUnits === "intl-ft") parts.push("international ft");

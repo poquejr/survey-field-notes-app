@@ -1,5 +1,5 @@
 /* Field Notes service worker — PWA app-shell cache. Not used by a later Capacitor native shell. */
-const CACHE = "field-notes-shell-v11";
+const CACHE = "field-notes-shell-v12";
 const TILE_CACHE = "field-notes-tiles-v1";
 const ASSETS = [
   "./",

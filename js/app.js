@@ -1312,7 +1312,6 @@
     var h = state.header;
     var note = "From JXL" + (cs.systemName || cs.zoneName ? ": " + [cs.systemName, cs.zoneName, cs.datumName].filter(Boolean).join(" / ") : "");
     if (zone && !h.crsZone) h.crsZone = zone;
-    if (cs.datumName && !h.crsDatum) h.crsDatum = cs.datumName;
     if (units && !h.crsUnits) h.crsUnits = units;
     h.crsFromJxl = note;
     h.crsEpochConfirmed = false;
